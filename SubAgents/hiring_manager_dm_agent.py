@@ -1,0 +1,56 @@
+import os
+from typing import Dict, Any
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+from langfuse import observe
+
+from OtherMCP.ground_truth_mcp import _load_profile
+
+load_dotenv()
+
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+
+@observe(name="Hiring Manager DM Agent: Draft Outreach")
+def generate_hiring_manager_dm(
+    manager_lead: Dict[str, Any],
+    master_profile: Dict[str, Any] = None
+) -> str:
+    """Drafts a concise direct message tailored to a hiring manager's post using Gemini 3.5."""
+    if not master_profile:
+        master_profile = _load_profile()
+
+    prompt = f"""
+    You are an expert executive communication assistant. 
+    Draft a hyper-concise (under 120 words), impactful LinkedIn DM or email to a hiring manager who posted an active opening.
+
+    HIRING MANAGER POST DETAILS:
+    Manager Name: {manager_lead['manager_name']}
+    Title: {manager_lead['manager_title']}
+    Matched Job Search Pattern: {manager_lead['matched_pattern']}
+    Post Text Snippet: {manager_lead['post_text']}
+
+    CANDIDATE GROUND-TRUTH FACTS (Sahil Garg):
+    • Software Engineer at o9 Solutions with 2.5 years of experience building applied AI systems, enterprise backends, and FDE tooling.
+    • Engineered centralized monitoring ETL architecture across 90+ enterprise client environments, achieving a 98% onboarding reduction (15 days to <3 hours).
+    • Architected a grammar-driven log obfuscation engine (ANTLR) that unblocked compliance and security requirements across 15+ enterprise clients.
+    • Developed a PageRank graph-based entity ranking engine to extract structured semantic context layers from unstructured enterprise metadata.
+    • Built a skills-based planning agent utilizing runtime semantic retrieval, driving a 60% reduction in query resolution time.
+    • Specialized in Forward Deployed Engineering, Applied AI, agentic LLM workflows, and high-performance Python backends.
+
+    STRICT GUIDELINES:
+    1. Do NOT sound spammy. Reference their specific post/hiring intent.
+    2. Pitch 2 key ground-truth accomplishments relevant to their opening.
+    3. End with a clear, low-friction call to action (e.g., "Open to a brief chat or sending over my tailored resume?").
+    """
+
+    response = client.models.generate_content(
+        model="gemini-3.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=1024),
+            temperature=0.3
+        )
+    )
+    return response.text.strip()

@@ -1,0 +1,115 @@
+[
+  {
+    "id": "APP-001",
+    "date": "2026-08-29 16:43:30",
+    "company": "Stripe",
+    "role": "Forward Deployed Engineer",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Software Engineer specializing in applied AI and scalable platform architecture.",
+    "matched_keywords": [
+      "Forward Deployed Engineer",
+      "Python",
+      "Systems Architecture"
+    ]
+  },
+  {
+    "id": "APP-002",
+    "date": "2026-08-29 16:47:15",
+    "company": "Palantir",
+    "role": "Forward Deployed Engineer - AI Systems",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Forward Deployed Engineer with 2.5 years of experience building production AI systems, custom tooling, and distributed enterprise platforms across 90+ client environments. Specializes in LLM orchestration, agentic workflows, and parsing engines using Python to solve complex deployment challenges.",
+    "matched_keywords": [
+      "Applied AI models",
+      "Enterprise platforms",
+      "Production AI systems",
+      "Custom tooling",
+      "Parsing engines",
+      "Graph-based entity algorithms",
+      "Agentic workflows",
+      "Software reliability",
+      "LLM orchestration",
+      "Agent frameworks"
+    ]
+  },
+  {
+    "id": "APP-003",
+    "date": "2026-08-29 16:59:43",
+    "company": "Databricks",
+    "role": "Forward Deployed AI Engineer",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Forward Deployed AI Engineer with 2.5 years of experience building production LLM systems, agent workflows, and vector knowledge layers on top of enterprise data platforms across 90+ client environments. Expert in writing high-performance Python code and custom parsing engines to accelerate client onboarding and resolve distributed system reliability issues.",
+    "matched_keywords": [
+      "Forward Deployed AI Engineer",
+      "Generative AI",
+      "Agentic frameworks",
+      "Distributed systems",
+      "Production LLM systems",
+      "Agent workflows",
+      "Vector knowledge layers",
+      "Enterprise data platforms",
+      "Python",
+      "Enterprise accounts"
+    ]
+  },
+  {
+    "id": "APP-004",
+    "date": "2026-08-29 18:14:11",
+    "company": "Creative Circle",
+    "role": "Visual Designer - Campaign and Concept Focus (Contract)",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Detail-oriented Visual Designer with a robust background in translating strategic direction and creative briefs into concept-driven visual ideas. Expert in maintaining brand consistency and executing integrated marketing campaigns across digital, social, and print channels.",
+    "matched_keywords": [
+      "Visual Designer",
+      "Graphic Design",
+      "Integrated Marketing",
+      "Creative Concepts",
+      "Adobe Creative Suite",
+      "Brand Consistency",
+      "Digital Marketing",
+      "Typography",
+      "Layout",
+      "Visual Storytelling"
+    ]
+  },
+  {
+    "id": "APP-005",
+    "date": "2026-08-29 22:22:06",
+    "company": "Scale AI",
+    "role": "Forward Deployed Engineer - Applied GenAI",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Forward Deployed Engineer and Software Engineer with 2.5 years of experience building applied AI systems, multi-agent frameworks, and scalable cloud architectures. Proven expertise in deploying fine-tuned LLM workflows and optimizing system performance across 90+ enterprise client environments.",
+    "matched_keywords": [
+      "Forward Deployed Engineer",
+      "AI agent architectures",
+      "Fine-tuned LLM workflows",
+      "Python development",
+      "Multi-agent frameworks",
+      "System optimization",
+      "Client cloud environments",
+      "Scale AI",
+      "AI deployment",
+      "Software engineering"
+    ]
+  },
+  {
+    "id": "APP-006",
+    "date": "2026-08-29 22:22:15",
+    "company": "Cognition",
+    "role": "Applied AI Software Engineer",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Software Engineer with 2.5 years of experience building production LLM systems, custom language parsing engines, and agentic code automation tools. Proven track record in backend development, systems reliability, and applying graph algorithms to resolve complex enterprise challenges across 90+ client environments.",
+    "matched_keywords": [
+      "production LLM systems",
+      "custom language parsing engines",
+      "agentic code automation tools",
+      "software engineers",
+      "systems reliability",
+      "Python tooling",
+      "graph algorithms",
+      "machine learning engineering",
+      "backend development",
+      "software automation"
+    ]
+  }
+]

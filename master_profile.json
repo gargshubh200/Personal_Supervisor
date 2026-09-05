@@ -1,0 +1,80 @@
+{
+  "personal_info": {
+    "name": "Sahil Garg",
+    "email": "gargshubh200@gmail.com",
+    "linkedin": "linkedin.com/in/iamsahilgarg",
+    "github": "github.com/sahilgarg",
+    "target_roles": ["Forward Deployed Engineer", "Applied AI Engineer", "Software Engineer"]
+  },
+  "summary": "Software Engineer with 2.5 years of experience building applied AI systems, backend tooling, and engineering distributed enterprise platforms across 90+ client environments.",
+  "experience": [
+    {
+      "company": "o9 Solutions",
+      "role": "Software Engineer",
+      "period": "Jul 2024 - Present",
+      "location": "Bengaluru, India",
+      "projects": [
+        {
+          "name": "Centralized Continuous Monitoring (CCM)",
+          "achievements": [
+            "Engineered centralized ETL architecture as sole engineer, resolving production reliability failures across 90+ enterprise client environments.",
+            "Accelerated client deployment speed, achieving a 98% overall onboarding reduction (15 days to <3 hours) across two architectural iterations.",
+            "Owned engineering coordination for production onboarding across 90+ enterprise environments with zero dedicated support staff.",
+            "Authored complete product TDD and user documentation, reducing support tickets and engineering dependency.",
+            "Spearheaded strategic migration of 7 enterprise ETL workflows from legacy SSIS to a Kubernetes-backed Spark platform, achieving a 40% reduction in data processing time."
+          ]
+        },
+        {
+          "name": "DSL Tooling Engine",
+          "achievements": [
+            "Architected a grammar-driven log obfuscation engine (ANTLR) that resolved a compliance-critical deployment blocker for over 15 enterprise clients.",
+            "Formulated a grammar-driven query decomposition engine (ANTLR) powering performance recommendations and QA user-journey reconstruction.",
+            "Received Q1 2026 Spot Award for obfuscator delivery and orchestration migration leadership."
+          ]
+        },
+        {
+          "name": "Entity Ranking & Semantic Context Generation",
+          "achievements": [
+            "Engineered an agentic data pipeline transforming metadata and usage logs across 4 entity types into a structured semantic knowledge layer.",
+            "Constructed a PageRank-based entity ranking engine on a bipartite graph combining structural connectivity with usage scoring across 4 enterprise clients.",
+            "Implemented a two-pass LLM pipeline generating a domain-grounded semantic model (15-cluster knowledge layer).",
+            "Developed a skills-based agent framework with deterministic reasoning and runtime semantic retrieval, driving a 60% reduction in query resolution time."
+          ]
+        }
+      ]
+    },
+    {
+      "company": "o9 Solutions",
+      "role": "Application Engineer Intern",
+      "period": "Jan 2024 - Jun 2024",
+      "location": "Bengaluru, India",
+      "achievements": [
+        "Restructured platform deployment topology by building API extraction layers for centralized raw-data ingestion, eliminating per-client deployment overhead."
+      ]
+    }
+  ],
+  "verified_metrics": [
+    {"metric": "98% client onboarding reduction", "detail": "From 15 days to <3 hours across 2 iterations"},
+    {"metric": "60% query resolution speedup", "detail": "Driven by runtime semantic retrieval in skills-based agent framework"},
+    {"metric": "40% data processing reduction", "detail": "Achieved via SSIS to Kubernetes Spark migration across 7 workflows"},
+    {"metric": "90+ client environments", "detail": "Centralized monitoring platform ownership"},
+    {"metric": "15+ enterprise clients unblocked", "detail": "Via ANTLR log obfuscation engine"},
+    {"metric": "15-cluster knowledge layer", "detail": "Generated via two-pass LLM pipeline"}
+  ],
+  "skills": {
+    "languages_and_tools": ["Python", "SQL", "REST APIs"],
+    "ai_and_agentic": ["LangChain", "LangGraph", "LangSmith", "Langfuse", "Google ADK", "LLM APIs", "Multi-Agent Systems", "Vertex AI", "Memory Management"],
+    "llm_concepts": ["RAG", "Tool Calling", "Prompt Engineering", "Context Management", "Chain-of-Thought Reasoning"],
+    "data_and_orchestration": ["Apache Spark", "PySpark", "Databricks (Delta Lake)", "Apache Airflow", "SSIS", "Apache Kafka"],
+    "cloud_and_infra": ["Kubernetes", "AWS", "GCP", "Azure", "Cloud Storage (S3, GCS, ADLS)", "Redis", "Elasticsearch", "Solr", "RabbitMQ"],
+    "specialized": ["ANTLR", "DSL Parsing", "Graph Algorithms (PageRank)", "Semantic Retrieval", "Modular Agent Components"]
+  },
+  "education": {
+    "institution": "Malaviya National Institute of Technology Jaipur",
+    "degree": "Bachelor of Technology in Electrical Engineering",
+    "period": "2020 - 2024",
+    "achievements": [
+      "Graduated with a CGPA of 8.25/10"
+    ]
+  }
+}

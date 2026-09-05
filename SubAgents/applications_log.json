@@ -1,0 +1,202 @@
+[
+  {
+    "id": "APP-001",
+    "date": "2026-08-30 23:54:06",
+    "company": "NVIDIA (LinkedIn)",
+    "role": "Senior Verification Engineer",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Software Engineer with 2.5 years of experience specializing in system reliability, grammar-driven tooling, and high-performance software engineering across 90+ environments. Proven track record in architecting robust verification and monitoring platforms, optimizing complex system architectures, and delivering scalable solutions for 15+ enterprise clients.",
+    "matched_keywords": [
+      "SoC Verification",
+      "CPU Verification",
+      "System Verilog",
+      "CPU architecture",
+      "Coherent fabric designs",
+      "micro-architecture verification",
+      "coverage driven verification",
+      "FPGA emulation",
+      "Silicon debugging",
+      "interconnect coherency"
+    ]
+  },
+  {
+    "id": "APP-002",
+    "date": "2026-08-30 23:54:17",
+    "company": "Palantir (Indeed) (Indeed)",
+    "role": "Forward Deployed Systems Engineer",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Forward Deployed Engineer with 2.5 years of experience bridging customer platform systems and production code bases across 90+ enterprise client environments. Expert in system integration, platform deployment, and engineering robust software solutions that optimize data processing and system reliability. Proven track record of delivering technical integration and solution engineering to unblock critical enterprise deployments.",
+    "matched_keywords": [
+      "Forward Deployed Engineer",
+      "production code bases",
+      "customer platform systems",
+      "system integration",
+      "software engineering",
+      "platform deployment",
+      "technical integration",
+      "Palantir",
+      "solution engineering",
+      "bridge systems"
+    ]
+  },
+  {
+    "id": "APP-003",
+    "date": "2026-08-30 23:54:30",
+    "company": "Cognition AI (Wellfound) (Wellfound)",
+    "role": "Applied AI Engineer - Agentic Systems",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Software Engineer with 2.5 years of experience specializing in building autonomous AI systems, specialized Python parser engines, and robust software architecture. Proven track record of deploying agentic frameworks and grammar-driven compilers that optimize system reliability and performance across 90+ enterprise environments.",
+    "matched_keywords": [
+      "autonomous AI systems",
+      "Python parser engines",
+      "code generation",
+      "AI engineering",
+      "parser development",
+      "software architecture",
+      "artificial intelligence",
+      "Python programming",
+      "autonomous agents",
+      "compiler engineering"
+    ]
+  },
+  {
+    "id": "APP-004",
+    "date": "2026-08-31 18:11:39",
+    "company": "Scale AI (LinkedIn)",
+    "role": "Forward Deployed Engineer - Applied GenAI",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Forward Deployed Engineer with 2.5 years of experience designing, deploying, and scaling enterprise AI agent architectures and distributed platforms across 90+ client cloud environments. Expert in implementing fine-tuned LLM workflows, runtime semantic retrieval, and high-performance data pipelines that drive system reliability and integration.",
+    "matched_keywords": [
+      "Forward Deployed Engineer",
+      "AI agent architectures",
+      "LLM workflows",
+      "fine-tuned LLM",
+      "client cloud environments",
+      "AI deployment",
+      "system scaling",
+      "enterprise AI",
+      "cloud architecture",
+      "AI integration"
+    ]
+  },
+  {
+    "id": "APP-005",
+    "date": "2026-09-02 00:22:05",
+    "company": "Charles River Laboratories (LinkedIn)",
+    "role": "Senior Data and DevOps Engineer",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Results-driven Data & DevOps Engineer with 2.5 years of experience building, deploying, and monitoring high-performance data pipelines and cloud infrastructure across 90+ enterprise environments. Expert in automating CI/CD workflows, managing infrastructure as code with Terraform, and orchestrating scalable data platforms in Azure and Kubernetes. Proven track record of collaborating in Agile squads to optimize system reliability and accelerate deployment speeds by 98%.",
+    "matched_keywords": [
+      "Data & DevOps Engineer",
+      "Azure Cloud Infrastructure",
+      "Infrastructure As Code",
+      "Terraform",
+      "CI/CD pipelines",
+      "Azure DevOps",
+      "Data Engineering",
+      "Agile squads",
+      "Data pipelines",
+      "Automation"
+    ]
+  },
+  {
+    "id": "APP-006",
+    "date": "2026-09-02 00:22:31",
+    "company": "Bosch Group (Indeed)",
+    "role": "Senior Software Engineer \u2013 Industrial IoT & Edge Systems",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Software Engineer with 2.5 years of experience designing and optimizing distributed systems, edge-ready data pipelines, and containerized services across 90+ client environments. Skilled in C++, Python, and Linux systems, with a proven track record of building high-performance protocol-level parsers and deploying robust software gateways.",
+    "matched_keywords": [
+      "C++ programming",
+      "Embedded Linux",
+      "Docker containers",
+      "Industrial IoT",
+      "Protocol conversion",
+      "Software gateways",
+      "Edge services",
+      "Multi-threading",
+      "CI/CD pipelines",
+      "Troubleshooting"
+    ]
+  },
+  {
+    "id": "APP-007",
+    "date": "2026-09-02 00:22:54",
+    "company": "Deltek, Inc. (Indeed)",
+    "role": "Software Engineer",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Software Engineer with 2.5 years of experience designing and scaling high-performance enterprise platforms and agentic AI systems across 90+ client environments. Expert in Full-Stack Development, Test-Driven Development (TDD), and integrating GenAI tools to automate complex workflows and optimize system reliability. Proven track record of leveraging cloud technologies and robust software design principles to accelerate deployment speeds by 98%.",
+    "matched_keywords": [
+      "Full-Stack Development",
+      "Test-Driven Development",
+      "TDD",
+      "Prompt Engineering",
+      "LLM Response Optimization",
+      "Agentic AI",
+      "GenAI Integration",
+      "Cloud Technologies",
+      "SOLID Principles",
+      "CI/CD"
+    ]
+  },
+  {
+    "id": "APP-008",
+    "date": "2026-09-02 00:23:19",
+    "company": "SingleStore (Wellfound)",
+    "role": "Forward Deployment Engineer- Greater NYC",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Software Engineer with 2.5 years of experience delivering production-grade solutions and distributed systems across 90+ enterprise client environments. Expert in solution architecture, technical consulting, and building high-impact data pipelines that integrate complex data ecosystems with cloud-native architectures. Proven track record of partnering directly with enterprise customers to translate business goals into scalable, real-time data solutions.",
+    "matched_keywords": [
+      "Forward Deployed Engineer",
+      "Solution Architecture",
+      "Technical Delivery",
+      "Distributed Systems",
+      "Data Pipelines",
+      "Production-grade Solutions",
+      "Technical Consulting",
+      "Real-time Data Solutions",
+      "Enterprise Customers",
+      "Solution Engineering"
+    ]
+  },
+  {
+    "id": "APP-009",
+    "date": "2026-09-02 00:23:42",
+    "company": "Databricks (Glassdoor) (Glassdoor)",
+    "role": "Forward Deployed AI Engineer",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Forward Deployed Engineer with 2.5 years of experience designing and deploying agentic workflows and enterprise platform architecture across 90+ client environments. Expert in integrating Databricks solutions, building multi-agent systems, and optimizing distributed data pipelines to drive system reliability and rapid client onboarding.",
+    "matched_keywords": [
+      "Forward Deployed Engineer",
+      "Databricks",
+      "Agentic Workflows",
+      "Enterprise Platform Architecture",
+      "Workflow Deployment",
+      "AI Agents",
+      "Enterprise Architecture",
+      "Platform Integration",
+      "Solutions Engineering",
+      "Systems Deployment"
+    ]
+  },
+  {
+    "id": "APP-010",
+    "date": "2026-09-02 00:24:05",
+    "company": "o9 Solutions (AmbitionBox) (AmbitionBox)",
+    "role": "Software Engineer - Applied AI Systems",
+    "status": "Tailored & Ready",
+    "tailored_summary": "Applied AI Engineer with 2.5 years of experience designing enterprise semantic context generation engines, knowledge graphs, and multi-agent frameworks. Proven track record of deploying robust graph algorithms and agentic AI pipelines across 90+ client environments, achieving up to a 60% reduction in query resolution times.",
+    "matched_keywords": [
+      "semantic context generation",
+      "graph algorithms",
+      "multi-agent frameworks",
+      "enterprise AI",
+      "knowledge graphs",
+      "agentic AI",
+      "context engineering",
+      "semantic search",
+      "graph databases",
+      "AI orchestration"
+    ]
+  }
+]
