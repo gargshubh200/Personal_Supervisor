@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Dict, Any
 from dotenv import load_dotenv
 from google import genai
@@ -19,20 +20,59 @@ gemini_retry = retry(
 
 load_dotenv()
 
-# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-# NEW: GCP Vertex AI Client (Draws from your ₹28,694 GCP credits!)
 client = genai.Client(
     vertexai=True,
     project="career-os-project",
     location="global"
 )
+
+PROHIBITED_NAME_WORDS = {"jobs", "job", "hiring", "recruiter", "careers", "followers", "subscribers", "board", "hub",
+                         "agency"}
+
+
+def _validate_manager_lead(manager_lead: Dict[str, Any]) -> bool:
+    """Refuses execution if manager_name or title belongs to a job aggregator/page."""
+    name = manager_lead.get("manager_name", "").strip()
+    title = manager_lead.get("manager_title", "").strip()
+
+    if not name or name == "Hiring Manager":
+        return False
+
+    name_lower = name.lower()
+    title_lower = title.lower()
+
+    # Reject non-human name patterns
+    if any(word in name_lower.split() for word in PROHIBITED_NAME_WORDS):
+        return False
+
+    if any(char.isdigit() for char in name):
+        return False
+
+    # Name must have at least first and last name
+    if len(name.split()) < 2:
+        return False
+
+    # Title must not be a recruiter or follower count page
+    if any(bad in title_lower for bad in ["follower", "followers", "subscriber", "recruiter", "job board"]):
+        return False
+
+    return True
+
+
 @gemini_retry
 @observe(name="Hiring Manager DM Agent: Draft Outreach")
 def generate_hiring_manager_dm(
-    manager_lead: Dict[str, Any],
-    master_profile: Dict[str, Any] = None
+        manager_lead: Dict[str, Any],
+        master_profile: Dict[str, Any] = None
 ) -> str:
     """Drafts a concise direct message tailored to a hiring manager's post using Gemini 3.5."""
+
+    # Validation Guard: Refuse drafting if lead is not a real human hiring manager
+    if not _validate_manager_lead(manager_lead):
+        name = manager_lead.get("manager_name", "Unknown Target")
+        print(f"⚠️ DM AGENT REFUSAL: Target '{name}' is a job board or non-human entity. Skipping outreach generation.")
+        return f"[OUTREACH SKIPPED: Target '{name}' is not a verified individual hiring manager]"
+
     if not master_profile:
         master_profile = _load_profile()
 

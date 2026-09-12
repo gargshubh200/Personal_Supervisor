@@ -22,13 +22,13 @@ gemini_retry = retry(
 
 load_dotenv()
 
-# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-# NEW: GCP Vertex AI Client (Draws from your ₹28,694 GCP credits!)
+# GCP Vertex AI Client
 client = genai.Client(
     vertexai=True,
     project="career-os-project",
     location="global"
 )
+
 
 class CoverLetterOutput(BaseModel):
     salutation: str = Field(description="Professional greeting (e.g. 'Dear Hiring Team at [Company]')")
@@ -66,10 +66,15 @@ def generate_cover_letter(
         critique_block += f"Qualitative Feedback: {review_feedback.qualitative_critique}\n"
 
     prompt = f"""
-    You are an Executive Cover Letter Writer for Forward Deployed, Applied AI & Software Engineering roles pitch.
+    You are an Executive Cover Letter Writer for Forward Deployed, Applied AI & Software Engineering roles.
     Draft a concise, compelling cover letter for Sahil Garg applying to {company_name} for the position of {jd_analysis.target_role}.
 
     {critique_block}
+
+    STRICT OPENING HOOK DIRECTIVE:
+    - NEVER begin with generic template formulas such as "I am writing to express my interest...", "I am thrilled to apply...", "Please accept this letter...", or "I am excited about the opportunity...".
+    - ALWAYS open directly with a high-impact, specific statement connecting Sahil's engineering background directly to {company_name}'s domain or the target {jd_analysis.target_role} requirements (e.g., "Having engineered centralized monitoring ETL architectures across 90+ enterprise client environments...").
+
     GROUND-TRUTH DIRECTIVES:
     1. Reference strictly verified facts from master profile (90+ client environments, 98% onboarding speedup, ANTLR log obfuscation for 15+ clients, 60% query reduction via skills-based agent).
     2. Connect candidate expertise in Python, agentic LLM workflows, and platform reliability directly to the JD requirements.
@@ -94,6 +99,7 @@ def generate_cover_letter(
     )
 
     return CoverLetterOutput.model_validate_json(response.text)
+
 
 @gemini_retry
 @observe(name="Cover Letter: Ground-Truth Audit")
@@ -131,7 +137,9 @@ def review_cover_letter_agent(
     Critique the candidate's draft against the target Job Description analysis.
 
     EVALUATION STANDARDS:
-    1. Hook & Positioning: Does the opening immediately demonstrate technical relevance?
+    1. Hook & Positioning: Does the opening IMMEDIATELY dive into technical impact?
+       - CRITICAL RULE: If the opening starts with boilerplate phrases like "I am writing to express my interest", "I am writing to apply", or "I am excited to submit my application", PENALIZE HEAVILY.
+       - If a generic boilerplate opener is present, overall_score MUST NOT exceed 75/100 and key_improvements MUST list "Replace generic opening formula with a direct, high-impact technical hook".
     2. Specificity & Evidence: Are concrete, ground-truth engineering accomplishments cited cleanly but not loudly?
     3. Tone & Alignment: Is the tone executive, cold, and free of filler phrases?
     4. Call-to-Action: Is the closing concise and low-friction?

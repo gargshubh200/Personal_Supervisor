@@ -21,13 +21,14 @@ gemini_retry = retry(
 )
 
 load_dotenv()
-# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-# NEW: GCP Vertex AI Client (Draws from your ₹28,694 GCP credits!)
+
+# GCP Vertex AI Client
 client = genai.Client(
     vertexai=True,
     project="career-os-project",
     location="global"
 )
+
 # Weight mapping for deterministic calculation
 WEIGHT_MAP = {
     "MATCH": 1.0,
@@ -43,7 +44,8 @@ WEIGHT_MAP = {
 
 class RequirementMatch(BaseModel):
     requirement: str = Field(description="The specific JD requirement or skill evaluated")
-    candidate_evidence: List[str] = Field(description="Direct ground-truth quotes/facts from master profile matching this requirement")
+    candidate_evidence: List[str] = Field(
+        description="Direct ground-truth quotes/facts from master profile matching this requirement")
     classification: Literal["MATCH", "PARTIAL", "MISSING", "UNKNOWN"] = Field(
         description="MATCH (solid evidence), PARTIAL (adjacent experience), MISSING (no background), UNKNOWN (unclear)"
     )
@@ -71,13 +73,13 @@ class MatchingReport(BaseModel):
 @gemini_retry
 @observe(name="Matching Agent: Grounded Requirement Evaluator")
 def evaluate_candidate_match(
-    jd_analysis: JDAnalysis,
-    master_profile: Dict[str, Any] = None,
-    threshold: float = 60.0
+        jd_analysis: JDAnalysis,
+        master_profile: Dict[str, Any] = None,
+        threshold: float = 60.0
 ) -> MatchingReport:
     """
     Evaluates candidate evidence against JD requirements and computes a
-    defensible, deterministic match score.
+    defensible, deterministic match score, emitting quantitative trace metrics to Langfuse.
     """
     if not master_profile:
         master_profile = _load_profile()
@@ -146,13 +148,24 @@ def evaluate_candidate_match(
         summary=summary_msg
     )
 
-    langfuse = get_client()
-    langfuse.update_current_span(
-        metadata={
-            "deterministic_score": calculated_score,
-            "passes_threshold": passes,
-            "total_requirements": total_reqs
-        }
-    )
+    # --- LANGFUSE METADATA & METRIC SCORE EMISSION ---
+    try:
+        langfuse = get_client()
+        langfuse.update_current_span(
+            metadata={
+                "deterministic_score": calculated_score,
+                "passes_threshold": passes,
+                "total_requirements": total_reqs
+            }
+        )
+
+        # Emit numerical score metric for time-series analytics
+        langfuse.score(
+            name="match_score",
+            value=calculated_score,
+            comment=f"Role: {getattr(jd_analysis, 'target_role', 'Unknown')} | {match_c} Matches, {partial_c} Partials, {missing_c} Gaps"
+        )
+    except Exception as e:
+        print(f"⚠️ Warning: Could not emit match_score to Langfuse: {str(e)}")
 
     return report

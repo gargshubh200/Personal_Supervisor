@@ -1,4 +1,4 @@
-import os, time
+import os
 from dotenv import load_dotenv
 from langfuse import observe
 
@@ -19,26 +19,86 @@ from SubAgents.matching_agent import evaluate_candidate_match
 from SubAgents.application_strategy_agent import determine_application_strategy
 from SubAgents.resume_tailoring_agent import run_resume_tailoring_workflow
 from SubAgents.cover_letter_agent import run_cover_letter_workflow
-from SubAgents.personal_ops_agent import log_tailored_application, generate_daily_standup_report
+from SubAgents.personal_ops_agent import generate_daily_standup_report
 
 from OtherMCP.ground_truth_mcp import _load_profile
 from OtherMCP.dispatch_mcp import generate_tailored_resume_docx
 
+# Phase 3 & 4 Imports
+from db_manager import DatabaseManager
+from OtherMCP.notification_mcp import send_executive_briefing
+
 load_dotenv()
 
 # ==============================================================================
-# MASTER CONFIGURATION & SEARCH TARGETS
+# FEATURE TOGGLES & COST CONTROL CONFIGURATION
+# ==============================================================================
+MCP_TOGGLES = {
+    "linkedin_hiring_posts": True,  # High-value hiring manager outreach
+    "ats_direct": True,  # Free public ATS APIs (Greenhouse/Lever)
+    "ats_google_dork": True,  # Free dorking via Serper/Tavily
+    "linkedin_jobs": False,  # Optional: Turn on when needed
+    "indeed": False,  # Optional
+    "wellfound": False,  # Optional
+    "glassdoor": False,  # Optional
+    "ambitionbox": False  # Optional
+}
+
+# ==============================================================================
+# MASTER TARGET ROLES & STRATEGY CONSTRAINTS
 # ==============================================================================
 MASTER_SEARCH_QUERIES = [
-    "Forward Deployed Engineer", "Applied AI Engineer", "Software Engineer",
-    "Platform Engineer", "Application Engineer", "AI Engineer",
-    "Machine Learning Engineer", "Software Developer", "Python Developer"
+    "Software Engineer",
+    "Applied AI Engineer",
+    "Platform Engineer",
+    "AI Infrastructure Engineer",
+    "Backend Engineer",
+    "Data Engineer",
+    "Python Developer"
 ]
 
 MASTER_LOCATIONS = [
     "India", "Remote", "Bengaluru", "Bangalore", "Hyderabad", "Pune",
     "Delhi", "Gurgaon", "Noida", "Gurugram", "Mumbai", "New Delhi"
 ]
+
+CAREER_STRATEGY_CONSTRAINTS = {
+    "excluded_companies": [
+        "o9 solutions",
+        "o9solutions",
+        "o9"
+    ],
+    "excluded_role_keywords": [
+        "forward deployed",
+        "fde",
+        "solutions engineer",
+        "support engineer",
+        "salesforce",
+        "apex",
+        "manager",
+        "director",
+        "vp",
+        "presales",
+        "sales engineer"
+    ],
+    "preferred_role_keywords": [
+        "software engineer",
+        "applied ai",
+        "platform engineer",
+        "ai infrastructure",
+        "backend engineer",
+        "data engineer"
+    ]
+}
+
+
+def is_location_eligible(job_location: str, allowed_locations: list) -> bool:
+    """Verifies if a scraped job location matches target geographic constraints."""
+    if not job_location or job_location.upper() == "N/A":
+        return True  # Retain unassigned locations for LLM evaluation
+
+    loc_lower = job_location.lower()
+    return any(target.lower() in loc_lower for target in allowed_locations) or "remote" in loc_lower
 
 
 @observe(name="Supervisor Agent: Modular MCP Multi-Agent Run")
@@ -47,106 +107,122 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     print("🤖 SUPERVISOR AGENT: MODULAR MCP ORCHESTRATION")
     print("==================================================")
 
-    # Slicing top 3 target roles to respect the Boolean operator limit advisory
+    db = DatabaseManager()
     active_roles_batch = MASTER_SEARCH_QUERIES[:3]
 
     # --------------------------------------------------------------------------
     # STEP 1: LINKEDIN HIRING MANAGER DISCOVERY & DM DRAFTING
     # --------------------------------------------------------------------------
-    print("\n🎯 STEP 1: Discovering Hiring Managers on LinkedIn (Patterns A, B, C)...")
-    leads = search_hiring_manager_posts(
-        search_queries=active_roles_batch,
-        locations=MASTER_LOCATIONS,
-        pattern_type="Pattern_A_Direct_Intent",
-        limit=5
-    )
+    hiring_manager_dms = {}
+    if MCP_TOGGLES.get("linkedin_hiring_posts"):
+        print("\n🎯 STEP 1: Discovering Hiring Managers on LinkedIn...")
+        try:
+            leads = search_hiring_manager_posts(
+                search_queries=active_roles_batch,
+                locations=MASTER_LOCATIONS,
+                pattern_type="Pattern_A_Direct_Intent",
+                limit=5
+            )
 
-    profile = _load_profile()
-    for idx, lead in enumerate(leads):
-        company_name = lead.get('company') or 'Tech Company'
-        print(f"\n📩 HIRING MANAGER OUTREACH DRAFT [{idx + 1}/{len(leads)}]: {lead['manager_name']} ({company_name})")
-        dm = generate_hiring_manager_dm(lead, profile)
-        print(f"--------------------------------------------------\n{dm}\n--------------------------------------------------")
-        time.sleep(3)  # Throttle between DM generation calls
+            profile = _load_profile()
+            for idx, lead in enumerate(leads):
+                company_name = lead.get('company') or 'Tech Company'
+                print(
+                    f"📩 Drafting DM [{idx + 1}/{len(leads)}]: {lead.get('manager_name', 'Hiring Manager')} ({company_name})")
+                dm = generate_hiring_manager_dm(lead, profile)
+                if not dm.startswith("[OUTREACH SKIPPED"):
+                    hiring_manager_dms[company_name.lower().strip()] = dm
+        except Exception as e:
+            print(f"⚠️ Warning during hiring manager discovery: {str(e)}")
+    else:
+        print("\n⏭️ STEP 1 SKIPPED: 'linkedin_hiring_posts' MCP is disabled in config.")
 
     # --------------------------------------------------------------------------
     # STEP 2: MULTI-PLATFORM JOB BOARD & ATS INGESTION
     # --------------------------------------------------------------------------
-    print("\n🌐 STEP 2: Ingesting Job Listings across Platform MCPs & ATS Engines...")
+    print("\n🌐 STEP 2: Ingesting Job Listings across Enabled Platform MCPs...")
     raw_jobs = []
 
-    # 1. Direct ATS Public APIs (Target Company List: Stripe, Palantir, Scale AI, Ramp)
-    raw_jobs.extend(fetch_ats_direct_jobs(limit=5))
+    if MCP_TOGGLES.get("ats_direct"):
+        print("  ↳ Fetching Direct ATS APIs...")
+        raw_jobs.extend(fetch_ats_direct_jobs(limit=5))
 
-    # 2. ATS Google Dorking (Serper Discovery + Tavily Full Markdown Extract)
-    raw_jobs.extend(search_ats_via_google_dork(limit=5))
+    if MCP_TOGGLES.get("ats_google_dork"):
+        print("  ↳ Executing ATS Google Dorking...")
+        raw_jobs.extend(search_ats_via_google_dork(limit=5))
 
-    # 3. LinkedIn: All 9 roles (Batched internally into 3-role Boolean chunks)
-    raw_jobs.extend(
-        fetch_linkedin_jobs(
-            search_queries=MASTER_SEARCH_QUERIES,
-            locations=MASTER_LOCATIONS,
-            limit_per_query=2
-        )
-    )
+    if MCP_TOGGLES.get("linkedin_jobs"):
+        print("  ↳ Scraping LinkedIn Jobs...")
+        raw_jobs.extend(
+            fetch_linkedin_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit_per_query=2))
 
-    # 4. Indeed: Top 3 roles
-    raw_jobs.extend(
-        fetch_indeed_jobs(
-            search_queries=active_roles_batch,
-            locations=["India", "Remote"],
-            limit=2
-        )
-    )
+    if MCP_TOGGLES.get("indeed"):
+        print("  ↳ Scraping Indeed Jobs...")
+        raw_jobs.extend(fetch_indeed_jobs(search_queries=active_roles_batch, locations=["India", "Remote"], limit=2))
 
-    # 5. Wellfound: Focused startup role
-    raw_jobs.extend(
-        fetch_wellfound_jobs(
-            search_queries=[active_roles_batch[1]],
-            locations=MASTER_LOCATIONS,
-            limit=1
-        )
-    )
+    if MCP_TOGGLES.get("wellfound"):
+        print("  ↳ Scraping Wellfound Jobs...")
+        raw_jobs.extend(
+            fetch_wellfound_jobs(search_queries=[active_roles_batch[1]], locations=MASTER_LOCATIONS, limit=1))
 
-    # 6. Glassdoor: Top 3 roles
-    raw_jobs.extend(
-        fetch_glassdoor_jobs(
-            search_queries=active_roles_batch,
-            locations=MASTER_LOCATIONS,
-            limit=1
-        )
-    )
+    if MCP_TOGGLES.get("glassdoor"):
+        print("  ↳ Scraping Glassdoor Jobs...")
+        raw_jobs.extend(fetch_glassdoor_jobs(search_queries=active_roles_batch, locations=MASTER_LOCATIONS, limit=1))
 
-    # 7. AmbitionBox: Focused role for India tech hubs
-    raw_jobs.extend(
-        fetch_ambitionbox_jobs(
-            search_queries=[active_roles_batch[2]],
-            locations=["Bengaluru"],
-            limit=1
-        )
-    )
+    if MCP_TOGGLES.get("ambitionbox"):
+        print("  ↳ Scraping AmbitionBox Jobs...")
+        raw_jobs.extend(
+            fetch_ambitionbox_jobs(search_queries=[active_roles_batch[2]], locations=["Bengaluru"], limit=1))
 
-    # Cross-Platform Deduplication by normalized company + role signature
+    # Filtering & Deduplication Logic
     seen_signatures = set()
     all_jobs = []
-    for j in raw_jobs:
-        sig = f"{j['company'].lower().strip()}:{j['role'].lower().strip()}"
-        if sig not in seen_signatures:
-            seen_signatures.add(sig)
-            all_jobs.append(j)
+    skipped_count = 0
+    excluded_company_count = 0
+    foreign_loc_count = 0
 
-    print(f"\n✅ Total Aggregated & Deduplicated Listings: {len(all_jobs)}")
+    for j in raw_jobs:
+        company = j.get('company', '').strip()
+        role = j.get('role', '').strip()
+        location = j.get('location', 'India').strip()
+        sig = f"{company.lower()}:{role.lower()}"
+
+        # 1. Filter out Current Employer
+        if any(ex_comp in company.lower() for ex_comp in CAREER_STRATEGY_CONSTRAINTS["excluded_companies"]):
+            excluded_company_count += 1
+            continue
+
+        # 2. Filter out Ineligible Geographic Locations
+        if not is_location_eligible(location, MASTER_LOCATIONS):
+            foreign_loc_count += 1
+            continue
+
+        # 3. In-Memory Deduplication
+        if sig in seen_signatures:
+            continue
+        seen_signatures.add(sig)
+
+        # 4. Firestore Historical Deduplication
+        if db.is_job_processed(company, role):
+            skipped_count += 1
+            continue
+
+        all_jobs.append(j)
+
+    print(f"✅ Deduplication Summary: {len(all_jobs)} eligible job leads retained.")
+    print(
+        f"   ↳ Filtered Out: {skipped_count} previously in DB | {foreign_loc_count} foreign locations | {excluded_company_count} current employer instances.")
 
     # --------------------------------------------------------------------------
     # STEP 3: MULTI-AGENT PROCESSING & GATED WORKFLOW EXECUTION
     # --------------------------------------------------------------------------
     for idx, job in enumerate(all_jobs):
-        print(f"\n⚙️ PROCESSING [{idx + 1}/{len(all_jobs)}]: [{job['platform']}] {job['company']} - {job['role']}")
+        company = job['company']
+        role = job['role']
+        location = job.get('location', 'India')
+        job_url = job.get('job_url', '')
 
-        # Throttle requests to respect Gemini RPM free rate limits
-        if idx > 0:
-            print("⏳ Throttling for 12 seconds to respect Gemini free rate limits...")
-            time.sleep(12)
+        print(f"\n⚙️ PROCESSING [{idx + 1}/{len(all_jobs)}]: [{job['platform']}] {company} - {role}")
 
         # 1. Parse Job Description Features
         print("🧠 [Agent 1/5] Extracting JD Keywords & Stack Requirements...")
@@ -155,73 +231,89 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
         # 2. Run Deterministic Grounded Match Evaluation
         print("📊 [Agent 2/5] Evaluating Candidate Requirement Match...")
         matching_report = evaluate_candidate_match(jd_analysis=jd_analysis, threshold=60.0)
-        print(f"   ↳ {matching_report.summary}")
+        match_score = int(matching_report.deterministic_score)
+        print(f"   ↳ Match Score: {match_score}% | {matching_report.summary}")
 
-        # 3. Formulate Application Strategy & Priority Ranking
-        print("🎯 [Agent 3/5] Determining Application Strategy & Priority Tier...")
+        # 3. Formulate Application Strategy (Enforcing Constraints)
+        print("🎯 [Agent 3/5] Determining Application Strategy...")
         strategy = determine_application_strategy(
-            company_name=job["company"],
+            company_name=company,
+            role_title=role,
             jd_analysis=jd_analysis,
-            matching_report=matching_report
+            matching_report=matching_report,
+            career_constraints=CAREER_STRATEGY_CONSTRAINTS
         )
-        print(f"   ↳ Strategy: {strategy.decision} | Priority: {strategy.priority} | Tailor Resume: {strategy.should_tailor_resume}")
+        print(f"   ↳ Decision: {strategy.decision} | Priority: {strategy.priority} | Reason: {strategy.reasoning}")
+
+        drive_resume_link = None
+        drive_cover_letter_link = None
 
         # ----------------------------------------------------------------------
-        # CONDITIONAL GATEWAY:
-        # Downstream tailoring and document generation run ONLY if strategy approves
+        # CONDITIONAL GATEWAY: Tailoring & Document Generation
         # ----------------------------------------------------------------------
         if strategy.decision == "APPLY" and strategy.should_tailor_resume == "YES":
-            print(f"🚀 Moving forward with resume tailoring & document dispatch for {job['company']}...")
+            print(f"🚀 Moving forward with resume tailoring & document dispatch for {company}...")
 
-            # 4. Run Multi-Pass Resume Tailoring Workflow
-            print("⚡ [Agent 4/5] Running Resume Tailoring, Safety Audit & Review Loop...")
             resume_res = run_resume_tailoring_workflow(
                 jd_text=job["jd_text"],
                 max_iterations=3,
                 quality_threshold=85
             )
 
-            # 5. Run Multi-Pass Cover Letter Workflow (Optional)
-            cover_letter_res = None
             if generate_cover_letters:
-                print("✍️ [Agent 5/5] Running Cover Letter Writer, Safety Audit & Review Loop...")
-                cover_letter_res = run_cover_letter_workflow(
+                run_cover_letter_workflow(
                     jd_text=job["jd_text"],
-                    company_name=job["company"],
+                    company_name=company,
                     max_iterations=3,
                     quality_threshold=85
                 )
 
-            # 6. ATS Document Generation & Cloud Dispatch
             if resume_res and resume_res.get("audit_report", {}).get("passed_audit"):
                 tailored = resume_res["tailored_output"]
 
                 doc_res = generate_tailored_resume_docx(
-                    company_name=job["company"],
-                    role_title=job["role"],
+                    company_name=company,
+                    role_title=role,
                     tailored_summary=tailored["tailored_summary"],
                     tailored_bullets=tailored["tailored_experience_bullets"]
                 )
 
-                log_tailored_application(
-                    company=f"{job['company']} ({job['platform']})",
-                    role=job["role"],
-                    tailored_summary=tailored["tailored_summary"],
-                    matched_keywords=jd_analysis.ats_keywords
-                )
+                drive_resume_link = doc_res.get('drive_url')
+                print(f"✅ Document Generated: {doc_res.get('local_path')}")
+                print(f"☁️ Google Drive Link: {drive_resume_link}")
 
-                print(f"✅ Generated ATS Resume Local: {doc_res.get('local_path')}")
-                print(f"☁️ Google Drive Link: {doc_res.get('drive_url')}")
+        # ----------------------------------------------------------------------
+        # FIRESTORE PERSISTENCE
+        # ----------------------------------------------------------------------
+        matched_dm = hiring_manager_dms.get(company.lower().strip())
 
-                if cover_letter_res:
-                    cl_score = cover_letter_res.get('review_report', {}).get('overall_score')
-                    print(f"✍️ Tailored Cover Letter Score: {cl_score}/100")
+        db.save_application_record(
+            company=company,
+            title=role,
+            location=location,
+            match_score=match_score,
+            strategy=strategy.priority,
+            drive_resume_link=drive_resume_link,
+            drive_cover_letter_link=drive_cover_letter_link,
+            hiring_manager_dm=matched_dm,
+            job_url=job_url
+        )
+
+    # --------------------------------------------------------------------------
+    # STEP 4: DAILY EXECUTIVE EMAIL DISPATCH
+    # --------------------------------------------------------------------------
+    print("\n📧 STEP 4: Generating Daily Executive Briefing & Email Dispatch...")
+    daily_records = db.get_daily_standup_summary()
+
+    if daily_records:
+        dispatched = send_executive_briefing(daily_records)
+        if dispatched:
+            print("✅ Executive briefing emailed successfully!")
         else:
-            print(f"⏭️ SKIPPING downstream tailoring for {job['company']}. Reason: Strategy designated as {strategy.decision}.")
+            print("⚠️ Email dispatch failed or skipped (check credentials).")
+    else:
+        print("ℹ️ No new application records generated today to email.")
 
-    # --------------------------------------------------------------------------
-    # STEP 4: DAILY STANDUP REPORT
-    # --------------------------------------------------------------------------
     print("\n" + generate_daily_standup_report())
 
 

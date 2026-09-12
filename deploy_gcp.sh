@@ -17,7 +17,8 @@ gcloud services enable \
     run.googleapis.com \
     artifactregistry.googleapis.com \
     cloudscheduler.googleapis.com \
-    aiplatform.googleapis.com
+    aiplatform.googleapis.com \
+    firestore.googleapis.com \
 
 echo "3. Ensuring Artifact Registry Repository exists..."
 gcloud artifacts repositories create ${REPO_NAME} \
@@ -35,7 +36,7 @@ gcloud run jobs deploy ${JOB_NAME} \
     --tasks 1 \
     --max-retries 1 \
     --task-timeout 30m \
-    --set-env-vars APIFY_API_TOKEN="",SERPER_API_KEY="",TAVILY_API_KEY="",GOOGLE_DRIVE_FOLDER_ID="",LANGFUSE_SECRET_KEY="",LANGFUSE_PUBLIC_KEY="",LANGFUSE_BASE_URL="https://us.cloud.langfuse.com"
+    --set-env-vars APIFY_API_TOKEN="",SERPER_API_KEY="",TAVILY_API_KEY="",GOOGLE_DRIVE_FOLDER_ID="",LANGFUSE_SECRET_KEY="",LANGFUSE_PUBLIC_KEY="",LANGFUSE_BASE_URL="https://us.cloud.langfuse.com",SENDER_EMAIL="gargshubh200@gmail.com",SENDER_APP_PASSWORD="YOUR_16_CHAR_GMAIL_APP_PASSWORD",RECIPIENT_EMAIL="gargshubh200@gmail.com"
 
 echo "6. Creating Daily Cloud Scheduler trigger..."
 gcloud scheduler jobs create http "${JOB_NAME}-schedule" \

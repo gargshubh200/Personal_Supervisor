@@ -1,6 +1,6 @@
 import os
 import json
-from typing import List, Literal, Dict, Any
+from typing import List, Literal, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from google import genai
@@ -21,8 +21,7 @@ gemini_retry = retry(
 )
 
 load_dotenv()
-# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-# NEW: GCP Vertex AI Client (Draws from your ₹28,694 GCP credits!)
+
 client = genai.Client(
     vertexai=True,
     project="career-os-project",
@@ -30,36 +29,82 @@ client = genai.Client(
 )
 
 
-# ------------------------------------------------------------------
-# Application Strategy Data Model
-# ------------------------------------------------------------------
-
 class ApplicationStrategyOutput(BaseModel):
+    company_name: str = Field(description="Name of the target company")
+    role_title: str = Field(description="Title of the target position")
     decision: Literal["APPLY", "SKIP"] = Field(description="Final decision whether to pursue this role")
     priority: Literal["HIGH", "MEDIUM", "LOW"] = Field(description="Application urgency and alignment tier")
     strongest_evidence: List[str] = Field(description="Top candidate accomplishments aligned to the job")
     weakest_area: List[str] = Field(description="Key gaps or requirements where background is weak/missing")
-    should_tailor_resume: Literal["YES", "NO"] = Field(description="YES only if decision is APPLY and role requires custom keyword positioning")
-    interview_preparation: List[str] = Field(description="Specific technical topics, system design areas, or DSL concepts to review for this interview")
+    should_tailor_resume: Literal["YES", "NO"] = Field(
+        description="YES only if decision is APPLY and role requires custom keyword positioning")
+    interview_preparation: List[str] = Field(
+        description="Specific technical topics, system design areas, or DSL concepts to review for this interview")
+    reasoning: str = Field(description="Detailed strategy rationale for auditing")
 
 
-# ------------------------------------------------------------------
-# Application Strategy Core Function
-# ------------------------------------------------------------------
 @gemini_retry
-@observe(name="Application Strategy Agent: Decision & Roadmap Engine")
+@observe(name="Application Strategy Agent: Decision Engine")
 def determine_application_strategy(
-    company_name: str,
-    jd_analysis: JDAnalysis,
-    matching_report: MatchingReport
+        company_name: str,
+        role_title: str,
+        jd_analysis: JDAnalysis,
+        matching_report: MatchingReport,
+        career_constraints: Optional[Dict[str, Any]] = None
 ) -> ApplicationStrategyOutput:
     """
-    Formulates a strategic decision (APPLY/SKIP), priority ranking,
-    and actionable interview preparation notes based on the deterministic matching report.
+    Formulates a strategic decision (APPLY/SKIP) while strictly enforcing
+    candidate career constraints (e.g., excluding FDE/Solutions/Support roles).
     """
+
+    # ------------------------------------------------------------------
+    # HARD CAREER CONSTRAINT CHECK (PRE-GATE REJECTION)
+    # ------------------------------------------------------------------
+    if career_constraints:
+        excluded_keywords = career_constraints.get("excluded_role_keywords", [])
+        combined_title = f"{role_title} {getattr(jd_analysis, 'target_role', '')}".lower()
+
+        for bad_kw in excluded_keywords:
+            if bad_kw.lower() in combined_title:
+                reason = f"Role title '{role_title}' contains excluded keyword '{bad_kw}' under Career Strategy Constraints."
+                print(f"🛑 [Strategy Gate] HARD SKIP: {reason}")
+
+                strategy = ApplicationStrategyOutput(
+                    company_name=company_name,
+                    role_title=role_title,
+                    decision="SKIP",
+                    priority="LOW",
+                    strongest_evidence=[],
+                    weakest_area=[f"Role type '{role_title}' is explicitly excluded from targeting."],
+                    should_tailor_resume="NO",
+                    interview_preparation=[],
+                    reasoning=reason
+                )
+
+                try:
+                    langfuse = get_client()
+                    langfuse.update_current_span(
+                        metadata={
+                            "company_name": company_name,
+                            "role_title": role_title,
+                            "decision": "SKIP",
+                            "constraint_rejection": True,
+                            "rejected_keyword": bad_kw
+                        }
+                    )
+                except Exception:
+                    pass
+
+                return strategy
+
+    # ------------------------------------------------------------------
+    # STANDARD LLM STRATEGY EVALUATION
+    # ------------------------------------------------------------------
     prompt = f"""
-    You are an Executive Career Strategist and Principal Engineering Lead.
+    You are an Executive Career Strategist.
     Based on the Deterministic Matching Report and JD Analysis for {company_name}, determine the optimal application strategy.
+
+    IMPORTANT: Populate 'company_name' exactly as "{company_name}" and 'role_title' exactly as "{role_title}".
 
     DECISION RULES:
     1. If deterministic_score >= 60.0 and passes_threshold is True -> decision = "APPLY".
@@ -70,12 +115,8 @@ def determine_application_strategy(
        - Set should_tailor_resume = "YES".
     3. If score < 60.0 or critical core skills are missing -> decision = "SKIP", priority = "LOW", should_tailor_resume = "NO".
 
-    INTERVIEW PREPARATION DIRECTIVES:
-    Extract 3-5 concrete technical topics, architectural concepts, or specific tools mentioned in the JD 
-    that the candidate must study if called for an interview.
-
     COMPANY: {company_name}
-    TARGET ROLE: {jd_analysis.target_role}
+    TARGET ROLE: {role_title}
 
     JD ANALYSIS:
     {jd_analysis.model_dump_json(indent=2)}
@@ -95,16 +136,25 @@ def determine_application_strategy(
         )
     )
 
-    strategy = ApplicationStrategyOutput.model_validate_json(response.text)
+    strategy_dict = json.loads(response.text)
+    strategy_dict["company_name"] = company_name
+    strategy_dict["role_title"] = role_title
 
-    langfuse = get_client()
-    langfuse.update_current_span(
-        metadata={
-            "decision": strategy.decision,
-            "priority": strategy.priority,
-            "should_tailor_resume": strategy.should_tailor_resume,
-            "deterministic_score": matching_report.deterministic_score
-        }
-    )
+    strategy = ApplicationStrategyOutput(**strategy_dict)
+
+    try:
+        langfuse = get_client()
+        langfuse.update_current_span(
+            metadata={
+                "company_name": strategy.company_name,
+                "role_title": strategy.role_title,
+                "decision": strategy.decision,
+                "priority": strategy.priority,
+                "should_tailor_resume": strategy.should_tailor_resume,
+                "deterministic_score": matching_report.deterministic_score
+            }
+        )
+    except Exception:
+        pass
 
     return strategy
