@@ -1,6 +1,10 @@
-cat << 'EOF' > deploy_gcp.sh
 #!/bin/bash
 set -e
+
+# Load local .env variables into environment if present
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+fi
 
 # Configuration
 PROJECT_ID="career-os-project"
@@ -12,42 +16,24 @@ IMAGE_NAME="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${JOB_NAME}:late
 echo "1. Setting active project to ${PROJECT_ID}..."
 gcloud config set project ${PROJECT_ID}
 
-echo "2. Enabling GCP APIs..."
+echo "2. Enabling Required GCP APIs..."
 gcloud services enable \
     run.googleapis.com \
     artifactregistry.googleapis.com \
     cloudscheduler.googleapis.com \
     aiplatform.googleapis.com \
-    firestore.googleapis.com \
+    firestore.googleapis.com
 
-echo "3. Ensuring Artifact Registry Repository exists..."
-gcloud artifacts repositories create ${REPO_NAME} \
-    --repository-format=docker \
-    --location=${REGION} \
-    --description="Career-OS Docker Repository" || true
-
-echo "4. Submitting Docker build to Cloud Build..."
+echo "3. Submitting Docker build to Cloud Build..."
 gcloud builds submit --tag ${IMAGE_NAME} .
 
-echo "5. Deploying Cloud Run Job..."
+echo "4. Deploying Cloud Run Job with Dynamic Env Vars..."
 gcloud run jobs deploy ${JOB_NAME} \
     --image ${IMAGE_NAME} \
     --region ${REGION} \
     --tasks 1 \
     --max-retries 1 \
     --task-timeout 30m \
-    --set-env-vars APIFY_API_TOKEN="",SERPER_API_KEY="",TAVILY_API_KEY="",GOOGLE_DRIVE_FOLDER_ID="",LANGFUSE_SECRET_KEY="",LANGFUSE_PUBLIC_KEY="",LANGFUSE_BASE_URL="https://us.cloud.langfuse.com",SENDER_EMAIL="gargshubh200@gmail.com",SENDER_APP_PASSWORD="YOUR_16_CHAR_GMAIL_APP_PASSWORD",RECIPIENT_EMAIL="gargshubh200@gmail.com"
+    --set-env-vars APIFY_API_TOKEN="${APIFY_API_TOKEN}",SERPER_API_KEY="${SERPER_API_KEY}",TAVILY_API_KEY="${TAVILY_API_KEY}",GOOGLE_DRIVE_FOLDER_ID="${GOOGLE_DRIVE_FOLDER_ID}",SENDER_EMAIL="${SENDER_EMAIL}",SENDER_APP_PASSWORD="${SENDER_APP_PASSWORD}",RECIPIENT_EMAIL="${RECIPIENT_EMAIL}",LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY}",LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY}",LANGFUSE_HOST="${LANGFUSE_HOST}"
 
-echo "6. Creating Daily Cloud Scheduler trigger..."
-gcloud scheduler jobs create http "${JOB_NAME}-schedule" \
-    --location ${REGION} \
-    --schedule "0 8 * * *" \
-    --time-zone "Asia/Kolkata" \
-    --uri "https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_ID}/jobs/${JOB_NAME}:run" \
-    --http-method POST \
-    --oauth-service-account-email "${PROJECT_ID}@appspot.gserviceaccount.com" || echo "Scheduler trigger creation completed or job already exists."
-
-echo "✅ Deployment pipeline completed successfully!"
-EOF
-
-chmod +x deploy_gcp.sh
+echo "✅ Deployment completed securely!"
