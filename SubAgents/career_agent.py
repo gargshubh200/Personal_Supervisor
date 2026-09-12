@@ -10,11 +10,26 @@ from langfuse import observe, get_client
 # Import MCP verification logic directly
 from OtherMCP.ground_truth_mcp import verify_claim, _load_profile
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.genai.errors import ClientError, ServerError
+
+gemini_retry = retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=10, max=60),
+    retry=retry_if_exception_type((ClientError, ServerError)),
+    reraise=True
+)
+
 load_dotenv()
 
 # Initialize Gemini Client
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
+# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# NEW: GCP Vertex AI Client (Draws from your ₹28,694 GCP credits!)
+client = genai.Client(
+    vertexai=True,
+    project="career-os-project",
+    location="us-central1"
+)
 
 # ------------------------------------------------------------------
 # Structured Data Models — Job Analysis & Resume Tailoring
@@ -78,7 +93,7 @@ class CoverLetterReviewOutput(BaseModel):
 # ------------------------------------------------------------------
 # Core Agent Pass 1: JD Analysis
 # ------------------------------------------------------------------
-
+@gemini_retry
 @observe(name="Pass 1: JD Analysis")
 def analyze_job_description(jd_text: str) -> JDAnalysis:
     """Extracts target skills, keywords, and structural requirements from the JD using Gemini 3.5 with thinking."""
@@ -118,6 +133,7 @@ def analyze_job_description(jd_text: str) -> JDAnalysis:
 # Resume Tailoring Agents (Generation, Audit, Review)
 # ------------------------------------------------------------------
 
+@gemini_retry
 @observe(name="Pass 2: Resume Tailoring & Alignment")
 def generate_tailored_bullets(
     jd_analysis: JDAnalysis,
@@ -166,6 +182,7 @@ def generate_tailored_bullets(
     return TailoredResumeOutput.model_validate_json(response.text)
 
 
+@gemini_retry
 @observe(name="Pass 3: Resume Ground-Truth Verification Guardrail")
 def verify_output_safety(output: TailoredResumeOutput) -> Dict[str, Any]:
     """Runs each tailored bullet through the MCP ground-truth verification guardrail."""
@@ -188,6 +205,7 @@ def verify_output_safety(output: TailoredResumeOutput) -> Dict[str, Any]:
     }
 
 
+@gemini_retry
 @observe(name="Pass 4: Resume Content Quality Review Agent")
 def review_tailored_content_agent(
     jd_analysis: JDAnalysis,
@@ -244,6 +262,7 @@ def review_tailored_content_agent(
 # Cover Letter Agents (Writer, Safety Guardrail, Reviewer)
 # ------------------------------------------------------------------
 
+@gemini_retry
 @observe(name="Cover Letter: Writer Agent")
 def generate_cover_letter(
     jd_analysis: JDAnalysis,
@@ -293,6 +312,7 @@ def generate_cover_letter(
     return CoverLetterOutput.model_validate_json(response.text)
 
 
+@gemini_retry
 @observe(name="Cover Letter: Ground-Truth Audit")
 def verify_cover_letter_safety(cover_letter: CoverLetterOutput) -> Dict[str, Any]:
     """Audits each paragraph of the generated cover letter against master profile facts."""
@@ -317,6 +337,7 @@ def verify_cover_letter_safety(cover_letter: CoverLetterOutput) -> Dict[str, Any
     }
 
 
+@gemini_retry
 @observe(name="Cover Letter: Quality Review Agent")
 def review_cover_letter_agent(
     jd_analysis: JDAnalysis,
@@ -369,6 +390,7 @@ def review_cover_letter_agent(
     return review
 
 
+@gemini_retry
 @observe(name="Cover Letter: Multi-Pass Execution Workflow")
 def run_cover_letter_workflow(
     jd_analysis: JDAnalysis,
@@ -528,7 +550,7 @@ def run_career_agent(
         "early_stopped": best_candidate["early_stopped"]
     }
 
-
+@gemini_retry
 @observe(name="Career Agent: Draft Hiring Manager Cold Outreach DM")
 def generate_hiring_manager_dm(manager_lead: Dict[str, Any], master_profile: Dict[str, Any]) -> str:
     """Drafts a concise direct message tailored to a hiring manager's post using Gemini 3.5 with thinking."""

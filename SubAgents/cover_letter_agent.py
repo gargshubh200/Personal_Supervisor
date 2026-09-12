@@ -10,10 +10,25 @@ from langfuse import observe, get_client
 from OtherMCP.ground_truth_mcp import verify_claim, _load_profile
 from SubAgents.jd_analysis_agent import JDAnalysis, analyze_job_description
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.genai.errors import ClientError, ServerError
+
+gemini_retry = retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=10, max=60),
+    retry=retry_if_exception_type((ClientError, ServerError)),
+    reraise=True
+)
+
 load_dotenv()
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
+# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# NEW: GCP Vertex AI Client (Draws from your ₹28,694 GCP credits!)
+client = genai.Client(
+    vertexai=True,
+    project="career-os-project",
+    location="us-central1"
+)
 
 class CoverLetterOutput(BaseModel):
     salutation: str = Field(description="Professional greeting (e.g. 'Dear Hiring Team at [Company]')")
@@ -32,6 +47,7 @@ class CoverLetterReviewOutput(BaseModel):
     key_improvements: List[str] = Field(description="Top 3 actionable suggestions for refining the cover letter")
 
 
+@gemini_retry
 @observe(name="Cover Letter: Writer Pass")
 def generate_cover_letter(
     jd_analysis: JDAnalysis,
@@ -79,7 +95,7 @@ def generate_cover_letter(
 
     return CoverLetterOutput.model_validate_json(response.text)
 
-
+@gemini_retry
 @observe(name="Cover Letter: Ground-Truth Audit")
 def verify_cover_letter_safety(cover_letter: CoverLetterOutput) -> Dict[str, Any]:
     audit_results = []
@@ -103,6 +119,7 @@ def verify_cover_letter_safety(cover_letter: CoverLetterOutput) -> Dict[str, Any
     }
 
 
+@gemini_retry
 @observe(name="Cover Letter: Quality Reviewer")
 def review_cover_letter_agent(
     jd_analysis: JDAnalysis,
@@ -155,6 +172,7 @@ def review_cover_letter_agent(
     return review
 
 
+@gemini_retry
 @observe(name="Cover Letter Agent: Workflow Run")
 def run_cover_letter_workflow(
     jd_text: str,

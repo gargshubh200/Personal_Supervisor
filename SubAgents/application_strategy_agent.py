@@ -10,8 +10,24 @@ from langfuse import observe, get_client
 from SubAgents.jd_analysis_agent import JDAnalysis
 from SubAgents.matching_agent import MatchingReport
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.genai.errors import ClientError, ServerError
+
+gemini_retry = retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=10, max=60),
+    retry=retry_if_exception_type((ClientError, ServerError)),
+    reraise=True
+)
+
 load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# NEW: GCP Vertex AI Client (Draws from your ₹28,694 GCP credits!)
+client = genai.Client(
+    vertexai=True,
+    project="career-os-project",
+    location="us-central1"
+)
 
 
 # ------------------------------------------------------------------
@@ -30,7 +46,7 @@ class ApplicationStrategyOutput(BaseModel):
 # ------------------------------------------------------------------
 # Application Strategy Core Function
 # ------------------------------------------------------------------
-
+@gemini_retry
 @observe(name="Application Strategy Agent: Decision & Roadmap Engine")
 def determine_application_strategy(
     company_name: str,

@@ -1,10 +1,12 @@
-mcp
 google-genai
-langfuse
-pydantic
-python-dotenv
-python-docx
 apify-client
+python-docx
+mcp
+langfuse
+python-dotenv
+tenacity
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+requests
+pydantic

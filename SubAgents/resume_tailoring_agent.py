@@ -10,10 +10,25 @@ from langfuse import observe, get_client
 from OtherMCP.ground_truth_mcp import verify_claim, _load_profile
 from SubAgents.jd_analysis_agent import JDAnalysis, analyze_job_description
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.genai.errors import ClientError, ServerError
+
+gemini_retry = retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=10, max=60),
+    retry=retry_if_exception_type((ClientError, ServerError)),
+    reraise=True
+)
+
 load_dotenv()
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
+# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# NEW: GCP Vertex AI Client (Draws from your ₹28,694 GCP credits!)
+client = genai.Client(
+    vertexai=True,
+    project="career-os-project",
+    location="us-central1"
+)
 
 class TailoredBullet(BaseModel):
     original_bullet: str = Field(description="The ground-truth bullet used in the source")
@@ -41,7 +56,7 @@ class ContentReviewOutput(BaseModel):
     bullet_reviews: List[BulletReview] = Field(description="Per-bullet quality evaluations")
     key_improvements: List[str] = Field(description="Top 3 actionable improvements for the next iteration")
 
-
+@gemini_retry
 @observe(name="Resume Tailoring: Writer Pass")
 def generate_tailored_bullets(
     jd_analysis: JDAnalysis,
@@ -88,7 +103,7 @@ def generate_tailored_bullets(
 
     return TailoredResumeOutput.model_validate_json(response.text)
 
-
+@gemini_retry
 @observe(name="Resume Tailoring: Ground-Truth Audit")
 def verify_output_safety(output: TailoredResumeOutput) -> Dict[str, Any]:
     audit_results = []
@@ -109,7 +124,7 @@ def verify_output_safety(output: TailoredResumeOutput) -> Dict[str, Any]:
         "results": audit_results
     }
 
-
+@gemini_retry
 @observe(name="Resume Tailoring: Quality Reviewer")
 def review_tailored_content_agent(
     jd_analysis: JDAnalysis,
@@ -160,7 +175,7 @@ def review_tailored_content_agent(
 
     return review
 
-
+@gemini_retry
 @observe(name="Resume Tailoring Agent: Workflow Run")
 def run_resume_tailoring_workflow(
     jd_text: str,

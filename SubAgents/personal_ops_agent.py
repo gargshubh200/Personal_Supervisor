@@ -6,6 +6,16 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 from langfuse import observe, get_client, propagate_attributes
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.genai.errors import ClientError, ServerError
+
+gemini_retry = retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=10, max=60),
+    retry=retry_if_exception_type((ClientError, ServerError)),
+    reraise=True
+)
+
 load_dotenv()
 
 APP_LOG_PATH = Path(__file__).parent / "applications_log.json"
@@ -26,7 +36,7 @@ def _save_log(log_data: List[Dict[str, Any]]) -> None:
 # ------------------------------------------------------------------
 # Personal Operations Tools & Tracing
 # ------------------------------------------------------------------
-
+@gemini_retry
 @observe(name="Personal Ops: Log Application")
 def log_tailored_application(company: str, role: str, tailored_summary: str, matched_keywords: List[str]) -> Dict[
     str, Any]:
@@ -52,7 +62,7 @@ def log_tailored_application(company: str, role: str, tailored_summary: str, mat
     )
     return entry
 
-
+@gemini_retry
 @observe(name="Personal Ops: Daily Standup Summary")
 def generate_daily_standup_report() -> str:
     """Generates a daily metrics digest of the 4-month job switch pipeline."""
