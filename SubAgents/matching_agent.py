@@ -26,7 +26,7 @@ load_dotenv()
 client = genai.Client(
     vertexai=True,
     project="career-os-project",
-    location="us-central1"
+    location="global"
 )
 # Weight mapping for deterministic calculation
 WEIGHT_MAP = {

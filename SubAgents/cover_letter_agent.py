@@ -27,7 +27,7 @@ load_dotenv()
 client = genai.Client(
     vertexai=True,
     project="career-os-project",
-    location="us-central1"
+    location="global"
 )
 
 class CoverLetterOutput(BaseModel):
