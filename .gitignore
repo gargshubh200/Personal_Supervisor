@@ -1,0 +1,27 @@
+# Environment & Secrets
+.env
+.env.*
+OtherMCP/credentials.json
+OtherMCP/token.json
+*.pem
+*.key
+
+# Output Artifacts & Documents
+*.docx
+*.pdf
+*.log
+SubAgents/applications_log.json
+agent_architecture_graph.png
+
+# Python & IDE
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.idea/
+.vscode/
+
+# OS Files
+.DS_Store
+Thumbs.db

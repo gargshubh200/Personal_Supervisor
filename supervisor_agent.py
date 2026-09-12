@@ -58,8 +58,7 @@ MASTER_SEARCH_QUERIES = [
 ]
 
 MASTER_LOCATIONS = [
-    "India", "Remote", "Bengaluru", "Bangalore", "Hyderabad", "Pune",
-    "Delhi", "Gurgaon", "Noida", "Gurugram", "Mumbai", "New Delhi"
+    "India", "Remote"
 ]
 
 CAREER_STRATEGY_CONSTRAINTS = {

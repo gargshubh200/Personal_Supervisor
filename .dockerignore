@@ -7,4 +7,4 @@ __pycache__/
 .gitignore
 .env
 OtherMCP/output_resumes/
-applications_log.json
+SubAgents/applications_log.json
