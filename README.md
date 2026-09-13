@@ -260,3 +260,26 @@ only be done through a chat session (`client.chats.create()` +
 addition to this project needs Gemini to decide, mid-task, to call one or
 more Python functions and react to their results, that step should be built
 as a chat session rather than added onto an existing `generate_content()` call.
+
+## A note on generating your own agent workflow graph (in case you make architectural changes)
+
+Using Graphviz (MERMAID output is already present in the README above):
+
+If your pipeline is built with custom Python orchestration (like supervisor_agent.py), 
+the graphviz library generates clean, publication-ready flowcharts rendered directly as PNGs.
+
+Prerequisites
+```bash
+pip install graphviz
+```
+Requires the system-level Graphviz library installed on your OS, e.g., 
+`winget install graphviz` on Windows or 
+`brew install graphviz` on macOS
+
+Generating the workflow graph:
+
+```bash
+python generate_workflow_graph.py
+```
+After running the above command, a PNG file named `career_os_workflow_graph.png` will be generated 
+in the project directory, visualizing the entire agent workflow.
