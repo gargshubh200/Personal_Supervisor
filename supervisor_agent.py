@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 from langfuse import observe
 
-# Modular MCP Server Imports
 from JobSearchMCP.ats_direct_mcp import fetch_ats_direct_jobs
 from JobSearchMCP.ats_google_dork_mcp import search_ats_via_google_dork
 from JobSearchMCP.linkedin_job_scraper_mcp import fetch_linkedin_jobs
@@ -12,7 +11,6 @@ from JobSearchMCP.wellfound_scraper_mcp import fetch_wellfound_jobs
 from JobSearchMCP.glassdoor_scraper_mcp import fetch_glassdoor_jobs
 from JobSearchMCP.ambitionbox_scraper_mcp import fetch_ambitionbox_jobs
 
-# Modular Sub-Agent Imports
 from SubAgents.hiring_manager_dm_agent import generate_hiring_manager_dm
 from SubAgents.jd_analysis_agent import analyze_job_description
 from SubAgents.matching_agent import evaluate_candidate_match
@@ -22,80 +20,84 @@ from SubAgents.cover_letter_agent import run_cover_letter_workflow
 from SubAgents.personal_ops_agent import generate_daily_standup_report
 
 from OtherMCP.ground_truth_mcp import _load_profile
-from OtherMCP.dispatch_mcp import generate_tailored_resume_docx
+from OtherMCP.dispatch_mcp import generate_tailored_resume_docx, generate_cover_letter_docx
 
-# Phase 3 & 4 Imports
+from SubAgents.master_profile_agent import generate_master_profile, find_latest_resume_in_candidate_folder
+
 from db_manager import DatabaseManager
 from OtherMCP.notification_mcp import send_executive_briefing
 
 load_dotenv()
 
-# ==============================================================================
-# FEATURE TOGGLES & COST CONTROL CONFIGURATION
-# ==============================================================================
 MCP_TOGGLES = {
-    "linkedin_hiring_posts": True,  # High-value hiring manager outreach
-    "ats_direct": True,  # Free public ATS APIs (Greenhouse/Lever)
-    "ats_google_dork": True,  # Free dorking via Serper/Tavily
-    "linkedin_jobs": False,  # Optional: Turn on when needed
-    "indeed": False,  # Optional
-    "wellfound": False,  # Optional
-    "glassdoor": False,  # Optional
-    "ambitionbox": False  # Optional
+    "linkedin_hiring_posts": True,
+    "ats_direct": True,
+    "ats_google_dork": True,
+    "linkedin_jobs": True,
+    "indeed": True,
+    "wellfound": True,
+    "glassdoor": False,
+    "ambitionbox": False
 }
 
-# ==============================================================================
-# MASTER TARGET ROLES & STRATEGY CONSTRAINTS
-# ==============================================================================
+# Tightened per Agent Optimization Context: removed 'Python Developer' (too junior/generic)
+# in favor of role terms reflecting the candidate's strongest differentiators
+# (data/AI platform & infrastructure engineering).
 MASTER_SEARCH_QUERIES = [
+    "Data Platform Engineer",
+    "AI Platform Engineer",
     "Software Engineer",
-    "Applied AI Engineer",
-    "Platform Engineer",
-    "AI Infrastructure Engineer",
-    "Backend Engineer",
-    "Data Engineer",
-    "Python Developer"
+    "AI Infrastructure Engineer"
 ]
 
 MASTER_LOCATIONS = [
-    "India", "Remote"
+    "India", "Bengaluru", "Remote", "Bangalore", "Hyderabad", "Pune"
 ]
 
+# Career Strategy Constraints — Agent Optimization Context, Section 6.
+# Hard reject constraints below MUST override an APPLY decision. Preference boost/downgrade
+# lists are passed to the Application Strategy Agent LLM to adjust priority tier (not decision).
 CAREER_STRATEGY_CONSTRAINTS = {
+    # Hard Reject: company identity
     "excluded_companies": [
-        "o9 solutions",
-        "o9solutions",
-        "o9"
+        "o9 solutions", "o9solutions", "o9",  # current employer
+        "tcs", "tata consultancy", "infosys", "wipro", "cognizant", "capgemini", "hcl"  # IT services/outsourcing
     ],
+    # Hard Reject: role type / seniority / domain
     "excluded_role_keywords": [
-        "forward deployed",
-        "fde",
-        "solutions engineer",
-        "support engineer",
-        "salesforce",
-        "apex",
-        "manager",
-        "director",
-        "vp",
-        "presales",
-        "sales engineer"
+        "forward deployed", "fde", "solutions engineer", "support engineer",
+        "salesforce", "apex", "manager", "director", "vp", "presales", "sales engineer",
+        "customer success", "pre-sales", "account executive",
+        "ml engineer", "machine learning engineer", "data scientist", "research engineer", "research scientist",
+        "full stack", "fullstack", "frontend", "front-end",
+        "android", "ios", "mobile", "react", "angular",
+        "hardware engineer", "embedded", "networking hardware", "datacenter operations",
+        "business analyst", "data analyst", "analytics engineer", "bi engineer", "reporting analyst"
     ],
     "preferred_role_keywords": [
-        "software engineer",
-        "applied ai",
-        "platform engineer",
-        "ai infrastructure",
-        "backend engineer",
-        "data engineer"
-    ]
+        "software engineer", "applied ai", "platform engineer",
+        "ai infrastructure", "backend engineer", "data engineer"
+    ],
+    # Preference Boost: upgrade MEDIUM -> HIGH priority
+    "preference_boost_companies": [
+        "databricks", "confluent", "grafana", "elastic", "weaviate",
+        "astronomer", "signoz", "anyscale"
+    ],
+    "preference_boost_keywords": [
+        "spark", "airflow", "delta lake", "kafka", "kubernetes",
+        "langchain", "langgraph", "rag", "agentic ai", "agentic"
+    ],
+    # Preference Downgrade: downgrade HIGH -> MEDIUM priority
+    "preference_downgrade_keywords": [
+        "terraform", "golang", "go (co-equal)", "3-5 years"
+    ],
+    "preference_downgrade_min_company_size": 10000  # large enterprises: slower hiring, less ownership
 }
 
 
 def is_location_eligible(job_location: str, allowed_locations: list) -> bool:
-    """Verifies if a scraped job location matches target geographic constraints."""
     if not job_location or job_location.upper() == "N/A":
-        return True  # Retain unassigned locations for LLM evaluation
-
+        return True
     loc_lower = job_location.lower()
     return any(target.lower() in loc_lower for target in allowed_locations) or "remote" in loc_lower
 
@@ -107,34 +109,63 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     print("==================================================")
 
     db = DatabaseManager()
-    active_roles_batch = MASTER_SEARCH_QUERIES[:3]
 
     # --------------------------------------------------------------------------
-    # STEP 1: LINKEDIN HIRING MANAGER DISCOVERY & DM DRAFTING
+    # STEP 0: REFRESH MASTER PROFILE FROM LATEST RESUME (if one is present)
     # --------------------------------------------------------------------------
-    hiring_manager_dms = {}
+    print("\n📄 STEP 0: Checking CandidateResumeDoc/ for an updated resume...")
+    try:
+        resume_path = find_latest_resume_in_candidate_folder()
+        if resume_path:
+            print(f"🧠 Found resume '{resume_path.name}' — regenerating master_profile.json...")
+            generate_master_profile(str(resume_path))
+            print("✅ STEP 0 COMPLETE: master_profile.json refreshed from latest resume.")
+        else:
+            print("ℹ️  No resume found in CandidateResumeDoc/. Using existing master_profile.json as-is.")
+    except Exception as e:
+        print(f"⚠️ Warning during master profile regeneration: {str(e)}. Proceeding with existing master_profile.json.")
+
+    # --------------------------------------------------------------------------
+    # STEP 1: INDEPENDENT LINKEDIN HIRING MANAGER DISCOVERY
+    # --------------------------------------------------------------------------
     if MCP_TOGGLES.get("linkedin_hiring_posts"):
-        print("\n🎯 STEP 1: Discovering Hiring Managers on LinkedIn...")
+        print("\n🎯 STEP 1: Discovering & Processing Hiring Managers on LinkedIn...")
         try:
             leads = search_hiring_manager_posts(
-                search_queries=active_roles_batch,
+                search_queries=None,  # Use module's optimized natural-language DEFAULT_HIRING_POST_ROLES
                 locations=MASTER_LOCATIONS,
-                pattern_type="Pattern_A_Direct_Intent",
-                limit=5
+                limit_per_pattern=2  # 4 roles x 4 patterns = 16 sequential actor calls; kept small to avoid overload
             )
 
             profile = _load_profile()
+            processed_leads_count = 0
+
             for idx, lead in enumerate(leads):
+                manager_name = lead.get('manager_name', 'Hiring Manager')
                 company_name = lead.get('company') or 'Tech Company'
-                print(
-                    f"📩 Drafting DM [{idx + 1}/{len(leads)}]: {lead.get('manager_name', 'Hiring Manager')} ({company_name})")
+                post_url = lead.get('post_url', '')
+
+                if db.is_hiring_lead_processed(post_url=post_url, manager_name=manager_name, company=company_name):
+                    print(f"⏭️ Skipping previously processed lead: {manager_name} ({company_name})")
+                    continue
+
+                print(f"📩 Drafting DM [{idx + 1}/{len(leads)}]: {manager_name} ({company_name})")
                 dm = generate_hiring_manager_dm(lead, profile)
+
                 if not dm.startswith("[OUTREACH SKIPPED"):
-                    hiring_manager_dms[company_name.lower().strip()] = dm
+                    db.save_hiring_lead_record(
+                        manager_name=manager_name,
+                        manager_title=lead.get('manager_title', ''),
+                        company=company_name,
+                        post_url=post_url,
+                        post_text=lead.get('post_text', ''),
+                        drafted_dm=dm
+                    )
+                    processed_leads_count += 1
+
+            print(f"✅ STEP 1 COMPLETE: {processed_leads_count} new hiring manager DMs saved to Firestore.")
         except Exception as e:
             print(f"⚠️ Warning during hiring manager discovery: {str(e)}")
-    else:
-        print("\n⏭️ STEP 1 SKIPPED: 'linkedin_hiring_posts' MCP is disabled in config.")
 
     # --------------------------------------------------------------------------
     # STEP 2: MULTI-PLATFORM JOB BOARD & ATS INGESTION
@@ -143,42 +174,14 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     raw_jobs = []
 
     if MCP_TOGGLES.get("ats_direct"):
-        print("  ↳ Fetching Direct ATS APIs...")
-        raw_jobs.extend(fetch_ats_direct_jobs(limit=5))
-
+        raw_jobs.extend(fetch_ats_direct_jobs(per_company_limit=5))
     if MCP_TOGGLES.get("ats_google_dork"):
-        print("  ↳ Executing ATS Google Dorking...")
         raw_jobs.extend(search_ats_via_google_dork(limit=5))
-
     if MCP_TOGGLES.get("linkedin_jobs"):
-        print("  ↳ Scraping LinkedIn Jobs...")
-        raw_jobs.extend(
-            fetch_linkedin_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit_per_query=2))
+        raw_jobs.extend(fetch_linkedin_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit_per_query=2))
 
-    if MCP_TOGGLES.get("indeed"):
-        print("  ↳ Scraping Indeed Jobs...")
-        raw_jobs.extend(fetch_indeed_jobs(search_queries=active_roles_batch, locations=["India", "Remote"], limit=2))
-
-    if MCP_TOGGLES.get("wellfound"):
-        print("  ↳ Scraping Wellfound Jobs...")
-        raw_jobs.extend(
-            fetch_wellfound_jobs(search_queries=[active_roles_batch[1]], locations=MASTER_LOCATIONS, limit=1))
-
-    if MCP_TOGGLES.get("glassdoor"):
-        print("  ↳ Scraping Glassdoor Jobs...")
-        raw_jobs.extend(fetch_glassdoor_jobs(search_queries=active_roles_batch, locations=MASTER_LOCATIONS, limit=1))
-
-    if MCP_TOGGLES.get("ambitionbox"):
-        print("  ↳ Scraping AmbitionBox Jobs...")
-        raw_jobs.extend(
-            fetch_ambitionbox_jobs(search_queries=[active_roles_batch[2]], locations=["Bengaluru"], limit=1))
-
-    # Filtering & Deduplication Logic
     seen_signatures = set()
     all_jobs = []
-    skipped_count = 0
-    excluded_company_count = 0
-    foreign_loc_count = 0
 
     for j in raw_jobs:
         company = j.get('company', '').strip()
@@ -186,55 +189,40 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
         location = j.get('location', 'India').strip()
         sig = f"{company.lower()}:{role.lower()}"
 
-        # 1. Filter out Current Employer
         if any(ex_comp in company.lower() for ex_comp in CAREER_STRATEGY_CONSTRAINTS["excluded_companies"]):
-            excluded_company_count += 1
             continue
-
-        # 2. Filter out Ineligible Geographic Locations
         if not is_location_eligible(location, MASTER_LOCATIONS):
-            foreign_loc_count += 1
+            continue
+        if sig in seen_signatures or db.is_job_processed(company, role):
             continue
 
-        # 3. In-Memory Deduplication
-        if sig in seen_signatures:
-            continue
         seen_signatures.add(sig)
-
-        # 4. Firestore Historical Deduplication
-        if db.is_job_processed(company, role):
-            skipped_count += 1
-            continue
-
         all_jobs.append(j)
 
-    print(f"✅ Deduplication Summary: {len(all_jobs)} eligible job leads retained.")
-    print(
-        f"   ↳ Filtered Out: {skipped_count} previously in DB | {foreign_loc_count} foreign locations | {excluded_company_count} current employer instances.")
+    print(f"✅ Deduplication Summary: {len(all_jobs)} new DISCOVERED job leads retained.")
 
     # --------------------------------------------------------------------------
-    # STEP 3: MULTI-AGENT PROCESSING & GATED WORKFLOW EXECUTION
+    # STEP 3: MULTI-AGENT PROCESSING & STATE TRANSITION PIPELINE
     # --------------------------------------------------------------------------
     for idx, job in enumerate(all_jobs):
         company = job['company']
         role = job['role']
         location = job.get('location', 'India')
-        job_url = job.get('job_url', '')
+        job_url = job.get('url', '') or job.get('job_url', '')
 
-        print(f"\n⚙️ PROCESSING [{idx + 1}/{len(all_jobs)}]: [{job['platform']}] {company} - {role}")
+        print(f"\n⚙️ PROCESSING [{idx + 1}/{len(all_jobs)}]: {company} - {role}")
+        current_lifecycle_status = "DISCOVERED"
 
-        # 1. Parse Job Description Features
-        print("🧠 [Agent 1/5] Extracting JD Keywords & Stack Requirements...")
+        # 1. Parse Job Description
         jd_analysis = analyze_job_description(job["jd_text"])
 
-        # 2. Run Deterministic Grounded Match Evaluation
-        print("📊 [Agent 2/5] Evaluating Candidate Requirement Match...")
+        # 2. Run Grounded Match Evaluation
         matching_report = evaluate_candidate_match(jd_analysis=jd_analysis, threshold=60.0)
-        match_score = int(matching_report.deterministic_score)
-        print(f"   ↳ Match Score: {match_score}% | {matching_report.summary}")
+        overall_score = int(matching_report.deterministic_score)
+        core_score = int(matching_report.core_capability_score)
+        current_lifecycle_status = "ANALYZED"
 
-        # 3. Formulate Application Strategy (Enforcing Constraints)
-        print("🎯 [Agent 3/5] Determining Application Strategy...")
+        # 3. Formulate Application Strategy (EV Funnel)
         strategy = determine_application_strategy(
             company_name=company,
             role_title=role,
@@ -242,59 +230,67 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
             matching_report=matching_report,
             career_constraints=CAREER_STRATEGY_CONSTRAINTS
         )
-        print(f"   ↳ Decision: {strategy.decision} | Priority: {strategy.priority} | Reason: {strategy.reasoning}")
+
+        if strategy.decision == "SKIP":
+            current_lifecycle_status = "SKIPPED"
+        else:
+            current_lifecycle_status = "SHORTLISTED"
 
         drive_resume_link = None
         drive_cover_letter_link = None
 
-        # ----------------------------------------------------------------------
-        # CONDITIONAL GATEWAY: Tailoring & Document Generation
-        # ----------------------------------------------------------------------
+        # 4. Tailoring & Document Dispatch Gateway
         if strategy.decision == "APPLY" and strategy.should_tailor_resume == "YES":
-            print(f"🚀 Moving forward with resume tailoring & document dispatch for {company}...")
-
             resume_res = run_resume_tailoring_workflow(
                 jd_text=job["jd_text"],
                 max_iterations=3,
                 quality_threshold=85
             )
 
-            if generate_cover_letters:
-                run_cover_letter_workflow(
-                    jd_text=job["jd_text"],
-                    company_name=company,
-                    max_iterations=3,
-                    quality_threshold=85
-                )
-
             if resume_res and resume_res.get("audit_report", {}).get("passed_audit"):
                 tailored = resume_res["tailored_output"]
-
                 doc_res = generate_tailored_resume_docx(
                     company_name=company,
                     role_title=role,
                     tailored_summary=tailored["tailored_summary"],
                     tailored_bullets=tailored["tailored_experience_bullets"]
                 )
-
                 drive_resume_link = doc_res.get('drive_url')
-                print(f"✅ Document Generated: {doc_res.get('local_path')}")
-                print(f"☁️ Google Drive Link: {drive_resume_link}")
+                current_lifecycle_status = "TAILORED"
 
-        # ----------------------------------------------------------------------
-        # FIRESTORE PERSISTENCE
-        # ----------------------------------------------------------------------
-        matched_dm = hiring_manager_dms.get(company.lower().strip())
+            if generate_cover_letters:
+                cl_res = run_cover_letter_workflow(
+                    jd_text=job["jd_text"],
+                    company_name=company,
+                    max_iterations=3,
+                    quality_threshold=85
+                )
 
+                if cl_res and cl_res.get("audit_report", {}).get("passed_audit"):
+                    cl_doc_res = generate_cover_letter_docx(
+                        company_name=company,
+                        role_title=role,
+                        cover_letter_data=cl_res["cover_letter"]
+                    )
+                    drive_cover_letter_link = cl_doc_res.get('drive_url')
+
+            if drive_resume_link:
+                current_lifecycle_status = "READY_TO_APPLY"
+
+        # 5. Persist Full Application Record with Rich Lifecycle State
         db.save_application_record(
             company=company,
             title=role,
             location=location,
-            match_score=match_score,
+            match_score=overall_score,
+            core_capability_score=core_score,
             strategy=strategy.priority,
+            decision=strategy.decision,
+            status=current_lifecycle_status,
+            dealbreaker_triggered=strategy.dealbreaker_triggered,
+            dealbreaker_reason=strategy.dealbreaker_reason,
             drive_resume_link=drive_resume_link,
             drive_cover_letter_link=drive_cover_letter_link,
-            hiring_manager_dm=matched_dm,
             job_url=job_url
         )
 
@@ -302,18 +298,12 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     # STEP 4: DAILY EXECUTIVE EMAIL DISPATCH
     # --------------------------------------------------------------------------
     print("\n📧 STEP 4: Generating Daily Executive Briefing & Email Dispatch...")
-    daily_records = db.get_daily_standup_summary()
+    daily_summary = db.get_daily_standup_summary()
 
-    if daily_records:
-        dispatched = send_executive_briefing(daily_records)
-        if dispatched:
-            print("✅ Executive briefing emailed successfully!")
-        else:
-            print("⚠️ Email dispatch failed or skipped (check credentials).")
-    else:
-        print("ℹ️ No new application records generated today to email.")
+    if daily_summary["job_applications"] or daily_summary["hiring_leads"]:
+        send_executive_briefing(daily_summary)
 
-    print("\n" + generate_daily_standup_report())
+    print("\n" + generate_daily_standup_report(applications=daily_summary["job_applications"]))
 
 
 if __name__ == "__main__":

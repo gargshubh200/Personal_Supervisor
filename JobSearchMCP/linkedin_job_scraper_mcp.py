@@ -17,15 +17,68 @@ apify_client = ApifyClient(apify_token) if apify_token else None
 
 HARVEST_ACTOR_ID = "harvestapi/linkedin-job-search"
 
-TECHNICAL_TITLE_REGEX = re.compile(
-    r'\b(engineer|developer|software|ai|applied ai|forward deployed|platform|backend|systems|architect)\b',
+# ── TITLE FILTERS ─────────────────────────────────────────────────────────────
+# Tightened per Agent Optimization Context: removed generic 'developer'/'architect'
+# (too many false positives), split into TARGET/EXCLUDED regexes for precision.
+
+EXCLUDED_TITLE_REGEX = re.compile(
+    r'\b('
+    r'intern|co-op|co op|graduate|new grad|'
+    r'principal|staff|distinguished|fellow|'
+    r'director|vp|vice president|head of|'
+    r'lead manager|account executive|'
+    r'sales|recruiter|talent|'
+    r'solutions engineer|customer success|pre-sales|presales|'
+    r'data scientist|research scientist|research engineer|'
+    r'machine learning engineer|ml engineer|'
+    r'frontend|front-end|full.?stack|fullstack|'
+    r'android|ios|mobile|react|angular|vue'
+    r')\b',
     re.IGNORECASE
 )
 
+TARGET_TITLE_REGEX = re.compile(
+    r'\b('
+    r'ai platform|data platform|ai infrastructure|ai backend|'
+    r'platform engineer|data infrastructure|'
+    r'applied ai|ai systems|'
+    r'software engineer|backend engineer'
+    r')\b',
+    re.IGNORECASE
+)
+
+# Reject roles that explicitly require 5+ years at the sourcing stage
+EXPERIENCE_YEAR_REJECT_REGEX = re.compile(
+    r'\b(5|6|7|8|9|10)\+?\s*(?:to\s*\d+\s*)?years?\s+(?:of\s+)?'
+    r'(?:professional\s+)?(?:software\s+)?(?:work\s+)?experience\b',
+    re.IGNORECASE
+)
+
+
+def passes_title_filter(title: str) -> bool:
+    """Returns True if title matches target engineering domains and isn't excluded."""
+    if not title or EXCLUDED_TITLE_REGEX.search(title):
+        return False
+    if re.search(r'\bdevops\b', title, re.IGNORECASE) and not re.search(r'\bplatform\b', title, re.IGNORECASE):
+        return False
+    return bool(TARGET_TITLE_REGEX.search(title))
+
+
+def passes_yoe_filter(jd_text: str) -> bool:
+    """Rejects roles explicitly requiring 5+ years — saves downstream matching-agent tokens."""
+    if not jd_text:
+        return True
+    return not EXPERIENCE_YEAR_REJECT_REGEX.search(jd_text)
+
+
+# Tightened to 6 queries per Agent Optimization Context.
+# Removed: 'Machine Learning Engineer' (requires PyTorch/model training - not our profile),
+# 'Python Developer' (too junior/generic), 'Software Developer' (too broad/bootcamp-level),
+# 'Application Engineer' (generates o9-style internal tooling roles), 'Forward Deployed Engineer'
+# (should only be targeted at specific companies via ats_direct_mcp, not broad LinkedIn search).
 DEFAULT_SEARCH_QUERIES = [
-    "Forward Deployed Engineer", "Applied AI Engineer", "Software Engineer",
-    "Platform Engineer", "Application Engineer", "AI Engineer",
-    "Machine Learning Engineer", "Software Developer", "Python Developer"
+    "Data Platform Engineer", "AI Platform Engineer", "Platform Engineer",
+    "Data Infrastructure Engineer", "AI Infrastructure Engineer", "Software Engineer Data Systems"
 ]
 
 DEFAULT_LOCATIONS = [
@@ -49,14 +102,27 @@ def fetch_linkedin_jobs(
         print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning fallback feed.")
         return _fallback_linkedin_jobs()
 
-    # Batch search_queries in groups of 3 joined by OR (2 OR operators per query string)
-    # This stays strictly under LinkedIn's 5-operator ceiling while reducing API calls
+    # Batch search_queries in groups of 3 joined by OR (2 OR operators per query string).
+    # Confirmed via HarvestAPI docs: LinkedIn boolean search caps each query string at
+    # 5 boolean operators (AND/OR/NOT) and 500 characters — this batching stays well
+    # within that ceiling while minimizing the number of actor calls.
     batched_queries = []
     chunk_size = 3
     for i in range(0, len(search_queries), chunk_size):
         chunk = search_queries[i:i + chunk_size]
         formatted_chunk = " OR ".join([f'"{q}"' for q in chunk])
-        batched_queries.append(f"({formatted_chunk})")
+        candidate_query = f"({formatted_chunk})"
+
+        op_count = len(re.findall(r'\b(AND|OR|NOT)\b', candidate_query))
+        if op_count > 5 or len(candidate_query) > 500:
+            print(f"⚠️  LinkedIn MCP: Skipping oversized batch query ({op_count} ops, {len(candidate_query)} chars).")
+            continue
+
+        batched_queries.append(candidate_query)
+
+    if not batched_queries:
+        print("⚠️ LinkedIn MCP: No valid batched queries constructed. Returning fallback feed.")
+        return _fallback_linkedin_jobs()
 
     # HarvestAPI Input Payload
     run_input = {
@@ -98,8 +164,8 @@ def fetch_linkedin_jobs(
                 if job_url in seen_urls:
                     continue
 
-                # Technical relevance filter and non-empty description check
-                if title and TECHNICAL_TITLE_REGEX.search(title) and jd_text:
+                # Technical relevance, YOE, and non-empty description filters
+                if title and passes_title_filter(title) and jd_text and passes_yoe_filter(jd_text):
                     seen_urls.add(job_url)
                     jobs.append({
                         "platform": "LinkedIn",

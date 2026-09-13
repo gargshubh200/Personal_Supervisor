@@ -25,7 +25,13 @@ def _load_log() -> List[Dict[str, Any]]:
     if not APP_LOG_PATH.exists():
         return []
     with open(APP_LOG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+        raw = f.read().strip()
+        if not raw:
+            return []
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return []
 
 
 def _save_log(log_data: List[Dict[str, Any]]) -> None:
@@ -64,9 +70,16 @@ def log_tailored_application(company: str, role: str, tailored_summary: str, mat
 
 @gemini_retry
 @observe(name="Personal Ops: Daily Standup Summary")
-def generate_daily_standup_report() -> str:
-    """Generates a daily metrics digest of the 4-month job switch pipeline."""
-    log = _load_log()
+def generate_daily_standup_report(applications: List[Dict[str, Any]] = None) -> str:
+    """
+    Generates a daily metrics digest of the 4-month job switch pipeline.
+
+    If `applications` is provided (e.g. today's Firestore application records from
+    db_manager.get_daily_standup_summary()), the report is built from that live data.
+    Otherwise it falls back to the local applications_log.json file (used by the
+    standalone `log_tailored_application()` tracker / this module's own test run).
+    """
+    log = applications if applications is not None else _load_log()
     total_apps = len(log)
 
     if total_apps == 0:
@@ -85,7 +98,9 @@ def generate_daily_standup_report() -> str:
     ]
 
     for app in recent:
-        report.append(f"  • [{app['id']}] {app['company']} - {app['role']} (Status: {app['status']})")
+        identifier = app.get("id") or app.get("company", "")[:3].upper()
+        role = app.get("role") or app.get("title", "")
+        report.append(f"  • [{identifier}] {app.get('company', '')} - {role} (Status: {app.get('status', '')})")
 
     report.append("==================================================")
     return "\n".join(report)

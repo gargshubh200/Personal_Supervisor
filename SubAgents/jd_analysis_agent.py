@@ -48,7 +48,7 @@ def analyze_job_description(jd_text: str) -> JDAnalysis:
         model="gemini-3.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(thinking_budget=1024),
+            thinking_config=types.ThinkingConfig(thinking_budget=512),
             response_mime_type="application/json",
             response_schema=JDAnalysis,
             temperature=0.1

@@ -66,7 +66,7 @@ def generate_cover_letter(
         critique_block += f"Qualitative Feedback: {review_feedback.qualitative_critique}\n"
 
     prompt = f"""
-    You are an Executive Cover Letter Writer for Forward Deployed, Applied AI & Software Engineering roles.
+    You are an Executive Cover Letter Writer for Applied AI, Platform & Software Engineering roles.
     Draft a concise, compelling cover letter for Sahil Garg applying to {company_name} for the position of {jd_analysis.target_role}.
 
     {critique_block}
@@ -159,7 +159,7 @@ def review_cover_letter_agent(
         model="gemini-3.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(thinking_budget=1024),
+            thinking_config=types.ThinkingConfig(thinking_budget=1536),
             response_mime_type="application/json",
             response_schema=CoverLetterReviewOutput,
             temperature=0.1

@@ -17,15 +17,64 @@ apify_client = ApifyClient(apify_token) if apify_token else None
 
 WELLFOUND_ACTOR_ID = "saswave/wellfound-company-job-scraper"
 
-TECHNICAL_TITLE_REGEX = re.compile(
-    r'\b(engineer|developer|software|ai|applied ai|forward deployed|platform|backend|systems|architect)\b',
+# ── TITLE FILTERS ─────────────────────────────────────────────────────────────
+# Tightened per Agent Optimization Context: split broad TECHNICAL_TITLE_REGEX
+# into TARGET/EXCLUDED regexes for precision, plus a sourcing-stage YOE guard.
+
+EXCLUDED_TITLE_REGEX = re.compile(
+    r'\b('
+    r'intern|co-op|co op|graduate|new grad|'
+    r'principal|staff|distinguished|fellow|'
+    r'director|vp|vice president|head of|'
+    r'lead manager|account executive|'
+    r'sales|recruiter|talent|'
+    r'solutions engineer|customer success|pre-sales|presales|'
+    r'data scientist|research scientist|research engineer|'
+    r'machine learning engineer|ml engineer|'
+    r'frontend|front-end|full.?stack|fullstack|'
+    r'android|ios|mobile|react|angular|vue'
+    r')\b',
     re.IGNORECASE
 )
 
+TARGET_TITLE_REGEX = re.compile(
+    r'\b('
+    r'ai platform|data platform|ai infrastructure|ai backend|'
+    r'platform engineer|data infrastructure|'
+    r'applied ai|ai systems|'
+    r'software engineer|backend engineer'
+    r')\b',
+    re.IGNORECASE
+)
+
+EXPERIENCE_YEAR_REJECT_REGEX = re.compile(
+    r'\b(5|6|7|8|9|10)\+?\s*(?:to\s*\d+\s*)?years?\s+(?:of\s+)?'
+    r'(?:professional\s+)?(?:software\s+)?(?:work\s+)?experience\b',
+    re.IGNORECASE
+)
+
+
+def passes_title_filter(title: str) -> bool:
+    """Returns True if title matches target engineering domains and isn't excluded."""
+    if not title or EXCLUDED_TITLE_REGEX.search(title):
+        return False
+    if re.search(r'\bdevops\b', title, re.IGNORECASE) and not re.search(r'\bplatform\b', title, re.IGNORECASE):
+        return False
+    return bool(TARGET_TITLE_REGEX.search(title))
+
+
+def passes_yoe_filter(jd_text: str) -> bool:
+    """Rejects roles explicitly requiring 5+ years — saves downstream matching-agent tokens."""
+    if not jd_text:
+        return True
+    return not EXPERIENCE_YEAR_REJECT_REGEX.search(jd_text)
+
+
+# Startup-specific terminology per Agent Optimization Context (Wellfound's audience
+# is startup-native — favors infra/AI-platform framing over generic titles).
 DEFAULT_SEARCH_QUERIES = [
-    "Forward Deployed Engineer", "Applied AI Engineer", "Software Engineer",
-    "Platform Engineer", "Application Engineer", "AI Engineer",
-    "Machine Learning Engineer", "Software Developer", "Python Developer"
+    "AI Backend Engineer", "Data Platform Engineer", "Platform Engineer",
+    "Infrastructure Engineer", "AI Infrastructure", "Data Engineer AI"
 ]
 
 DEFAULT_LOCATIONS = [
@@ -103,8 +152,8 @@ def fetch_wellfound_jobs(
                 if job_url in seen_urls:
                     continue
 
-                # Technical title check & non-empty description check
-                if title and TECHNICAL_TITLE_REGEX.search(title) and jd_text:
+                # Technical title, YOE, and non-empty description filters
+                if title and passes_title_filter(title) and jd_text and passes_yoe_filter(jd_text):
                     seen_urls.add(job_url)
                     jobs.append({
                         "platform": "Wellfound",

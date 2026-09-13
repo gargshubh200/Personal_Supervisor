@@ -48,12 +48,12 @@ def _validate_manager_lead(manager_lead: Dict[str, Any]) -> bool:
     if any(char.isdigit() for char in name):
         return False
 
-    # Name must have at least first and last name
-    if len(name.split()) < 2:
+    # Name must have at least first name
+    if len(name.split()) < 1:
         return False
 
-    # Title must not be a recruiter or follower count page
-    if any(bad in title_lower for bad in ["follower", "followers", "subscriber", "recruiter", "job board"]):
+    # Title must not be a follower count page
+    if any(bad in title_lower for bad in ["follower", "followers", "subscriber", "job board"]):
         return False
 
     return True

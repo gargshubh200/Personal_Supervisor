@@ -74,7 +74,7 @@ def generate_tailored_bullets(
         critique_block += f"Summary Feedback: {review_feedback.summary_feedback}\n"
 
     prompt = f"""
-    You are a Forward Deployed / Applied AI Engineering / Software Engineering Resume Specialist.
+    You are a Applied AI Engineering / Platform Engineering / Software Engineering Resume Specialist.
     Your task is to rephrase existing ground-truth achievements from the master profile to best align with the Target Job Analysis.
 
     {critique_block}
@@ -155,7 +155,7 @@ def review_tailored_content_agent(
         model="gemini-3.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(thinking_budget=1024),
+            thinking_config=types.ThinkingConfig(thinking_budget=1536),
             response_mime_type="application/json",
             response_schema=ContentReviewOutput,
             temperature=0.1

@@ -3,6 +3,14 @@ JobSearchMCP/ats_direct_mcp.py
 
 Fetches live engineering job postings directly from public ATS APIs (Greenhouse, Lever, Ashby)
 for specific high-growth target companies with zero proxy costs and fast execution times.
+
+v2 Changes:
+- Per-company limit instead of global limit (prevents early exit after first company)
+- Expanded TARGET_COMPANIES with verified ATS slugs (18 companies)
+- Tightened TARGET_TITLE_REGEX to reduce false positives
+- Expanded EXCLUDED_TITLE_REGEX with missing exclusions
+- Added minimum JD length guard for Ashby (prevents empty JD false passes)
+- Added EXPERIENCE_YEAR_REJECT_REGEX for 5+ year role detection
 """
 
 import os
@@ -16,30 +24,95 @@ from langfuse import observe, get_client
 
 load_dotenv()
 
-# Initialize MCPServer and Langfuse client
 mcp = MCPServer("ATSDirectServer")
 langfuse = get_client()
 
-# Exclude titles outside the candidate's experience tier and technical domain
+# ── TITLE FILTERS ─────────────────────────────────────────────────────────────
+
 EXCLUDED_TITLE_REGEX = re.compile(
-    r'\b(intern|co-op|graduate|principal|staff|director|vp|vice president|head of|lead manager|account executive|sales|recruiter)\b',
+    r'\b('
+    r'intern|co-op|co op|graduate|new grad|'
+    r'principal|staff|distinguished|fellow|'
+    r'director|vp|vice president|head of|'
+    r'lead manager|account executive|'
+    r'sales|recruiter|talent|'
+    r'solutions engineer|customer success|pre-sales|presales|'
+    r'data scientist|research scientist|research engineer|'
+    r'machine learning engineer|ml engineer|'
+    r'frontend|front-end|full.?stack|fullstack|'
+    r'android|ios|mobile|react|angular|vue'
+    r')\b',
     re.IGNORECASE
 )
 
-# Include core target technical domains
 TARGET_TITLE_REGEX = re.compile(
-    r'\b(forward deployed|applied ai|ai systems|software engineer|systems engineer|platform engineer|backend)\b',
+    r'\b('
+    r'ai platform|data platform|ai infrastructure|ai backend|'
+    r'platform engineer|data infrastructure|'
+    r'applied ai|ai systems|'
+    r'software engineer|backend engineer'
+    r')\b',
     re.IGNORECASE
 )
 
-# Target high-growth tech companies and their ATS vendor configuration
+# ── EXPERIENCE YEAR FILTER ────────────────────────────────────────────────────
+
+# Reject roles that explicitly require 5+ years
+EXPERIENCE_YEAR_REJECT_REGEX = re.compile(
+    r'\b(5|6|7|8|9|10)\+?\s*(?:to\s*\d+\s*)?years?\s+(?:of\s+)?'
+    r'(?:professional\s+)?(?:software\s+)?(?:work\s+)?experience\b',
+    re.IGNORECASE
+)
+
+# ── TARGET COMPANIES ──────────────────────────────────────────────────────────
+# ATS slugs verified against public API endpoints.
+# Test any new slug: curl https://boards-api.greenhouse.io/v1/boards/{slug}/jobs
+# If 404 — slug is wrong. Common variations: company-inc, companyai, company-labs
+
 TARGET_COMPANIES = [
-    {"name": "Stripe", "ats": "greenhouse", "slug": "stripe"},
-    {"name": "Palantir", "ats": "lever", "slug": "palantir"},
-    {"name": "Scale AI", "ats": "greenhouse", "slug": "scaleai"},
-    {"name": "Ramp", "ats": "ashby", "slug": "ramp"}
+    # ── Core Targets ──
+    {"name": "Stripe",          "ats": "greenhouse", "slug": "stripe"},
+    {"name": "Palantir",        "ats": "lever",      "slug": "palantir"},
+    {"name": "Scale AI",        "ats": "greenhouse", "slug": "scaleai"},
+    {"name": "Ramp",            "ats": "ashby",      "slug": "ramp"},
+    {"name": "Rippling",        "ats": "greenhouse", "slug": "rippling"},
+
+    # ── AI Infrastructure & Data Platform ──
+    {"name": "Databricks",      "ats": "greenhouse", "slug": "databricks"},
+    {"name": "Confluent",       "ats": "greenhouse", "slug": "confluent"},
+    {"name": "Grafana Labs",    "ats": "greenhouse", "slug": "grafana"},
+    {"name": "Elastic",         "ats": "greenhouse", "slug": "elastic"},
+    {"name": "Glean",           "ats": "greenhouse", "slug": "glean"},
+    {"name": "Weaviate",        "ats": "ashby",      "slug": "weaviate"},
+
+    # ── Orchestration & Data Integration ──
+    {"name": "Astronomer",      "ats": "greenhouse", "slug": "astronomer"},
+    {"name": "Airbyte",         "ats": "greenhouse", "slug": "airbyte"},
+    {"name": "Fivetran",        "ats": "greenhouse", "slug": "fivetran"},
+
+    # ── Indian Product Companies ──
+    {"name": "Razorpay",        "ats": "lever",      "slug": "razorpay"},
+    {"name": "Freshworks",      "ats": "greenhouse", "slug": "freshworks"},
+
+    # ── Other Strong Targets ──
+    {"name": "Notion",          "ats": "greenhouse", "slug": "notion"},
+    {"name": "Linear",          "ats": "ashby",      "slug": "linear"},
 ]
 
+# ── COMPANY-LEVEL TITLE OVERRIDES ─────────────────────────────────────────────
+# Some companies use role titles not caught by TARGET_TITLE_REGEX.
+# Add company-specific additional patterns here.
+COMPANY_TITLE_OVERRIDES = {
+    "Palantir":  re.compile(r'\b(forward deployed|fde|sde|devops|reliability)\b', re.IGNORECASE),
+    "Scale AI":  re.compile(r'\b(forward deployed|applied|ai|ml|data)\b', re.IGNORECASE),
+    "Glean":     re.compile(r'\b(forward deployed|applied ai|backend)\b', re.IGNORECASE),
+}
+
+# Minimum JD length — below this likely means empty/malformed JD, skip
+MIN_JD_LENGTH = 100
+
+
+# ── UTILITY FUNCTIONS ─────────────────────────────────────────────────────────
 
 def clean_html(raw_html: str) -> str:
     """Strips HTML tags, unescapes HTML entities, and normalizes whitespace."""
@@ -50,112 +123,189 @@ def clean_html(raw_html: str) -> str:
     return re.sub(r'\s+', ' ', text).strip()
 
 
-def passes_tier1_title_filter(title: str) -> bool:
-    """Verifies that job title matches target engineering domains and excludes non-applicable tiers."""
+def passes_title_filter(title: str, company_name: str = "") -> bool:
+    """
+    Returns True if title matches target engineering domains
+    and does not match excluded tiers/domains.
+    Company-level overrides applied for known exceptions.
+    """
     if EXCLUDED_TITLE_REGEX.search(title):
         return False
+
+    # Check company-level override first
+    override = COMPANY_TITLE_OVERRIDES.get(company_name)
+    if override and override.search(title):
+        return True
+
     return bool(TARGET_TITLE_REGEX.search(title))
 
 
-def passes_tier2_yoe_filter(jd_text: str) -> bool:
+def passes_yoe_filter(jd_text: str) -> bool:
     """
-    Parses required years of experience.
-    Rejects roles strictly requiring > 3 years or internships (0 years).
+    Rejects roles explicitly requiring 5+ years.
+    Also rejects internships (0 years required).
+    Returns True if no explicit year requirement found (safe default).
     """
-    yoe_matches = re.findall(r'(\d+)\+?\s*(?:-\s*\d+)?\s*years?\s+(?:of\s+)?experience', jd_text, re.IGNORECASE)
+    if not jd_text or len(jd_text) < MIN_JD_LENGTH:
+        return False  # Malformed or empty JD — skip
 
+    # Hard reject: 5+ year requirement
+    if EXPERIENCE_YEAR_REJECT_REGEX.search(jd_text):
+        return False
+
+    # Reject internships
+    yoe_matches = re.findall(
+        r'(\d+)\+?\s*(?:-\s*\d+)?\s*years?\s+(?:of\s+)?experience',
+        jd_text,
+        re.IGNORECASE
+    )
     if yoe_matches:
         min_years = min(int(y) for y in yoe_matches)
-        if min_years > 3 or min_years == 0:
+        if min_years == 0:
             return False
+
     return True
 
 
+def fetch_greenhouse_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
+    """Fetches jobs from Greenhouse ATS API."""
+    url = f"https://boards-api.greenhouse.io/v1/boards/{comp['slug']}/jobs?content=true"
+    res = requests.get(url, timeout=10).json()
+    results = []
+
+    for item in res.get("jobs", []):
+        if len(results) >= per_company_limit:
+            break
+        title = item.get("title", "").strip()
+        clean_jd = clean_html(item.get("content", ""))
+
+        if passes_title_filter(title, comp["name"]) and passes_yoe_filter(clean_jd):
+            results.append({
+                "platform": f"Direct ATS ({comp['name']})",
+                "company": comp["name"],
+                "role": title,
+                "url": item.get("absolute_url", ""),
+                "location": item.get("location", {}).get("name", "Remote"),
+                "jd_text": clean_jd[:4000]
+            })
+
+    return results
+
+
+def fetch_lever_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
+    """Fetches jobs from Lever ATS API."""
+    url = f"https://api.lever.co/v0/postings/{comp['slug']}?mode=json"
+    res = requests.get(url, timeout=10).json()
+    results = []
+
+    for item in (res if isinstance(res, list) else []):
+        if len(results) >= per_company_limit:
+            break
+        title = item.get("text", "").strip()
+        raw_content = item.get("descriptionPlain", "") or item.get("description", "")
+        clean_jd = clean_html(raw_content)
+
+        if passes_title_filter(title, comp["name"]) and passes_yoe_filter(clean_jd):
+            results.append({
+                "platform": f"Direct ATS ({comp['name']})",
+                "company": comp["name"],
+                "role": title,
+                "url": item.get("hostedUrl", ""),
+                "location": item.get("categories", {}).get("location", "Remote"),
+                "jd_text": clean_jd[:4000]
+            })
+
+    return results
+
+
+def fetch_ashby_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
+    """Fetches jobs from Ashby ATS API."""
+    url = f"https://api.ashbyhq.com/posting-api/job-board/{comp['slug']}"
+    res = requests.get(url, timeout=10).json()
+    results = []
+
+    for item in res.get("jobs", []):
+        if len(results) >= per_company_limit:
+            break
+        title = item.get("title", "").strip()
+        # Ashby: try descriptionPlain first, fall back to HTML (clean it)
+        raw_content = (
+            item.get("descriptionPlain", "") or
+            item.get("descriptionHtml", "") or
+            item.get("description", "")
+        )
+        clean_jd = clean_html(raw_content)
+
+        if passes_title_filter(title, comp["name"]) and passes_yoe_filter(clean_jd):
+            location_name = (
+                item.get("locationName") or
+                item.get("location") or
+                "Remote"
+            )
+            results.append({
+                "platform": f"Direct ATS ({comp['name']})",
+                "company": comp["name"],
+                "role": title,
+                "url": item.get("jobUrl") or item.get("applyUrl", ""),
+                "location": location_name,
+                "jd_text": clean_jd[:4000]
+            })
+
+    return results
+
+
+# ── MAIN TOOL ─────────────────────────────────────────────────────────────────
+
 @observe(name="ATS Direct MCP: Fetch Public API Jobs")
 @mcp.tool()
-def fetch_ats_direct_jobs(limit: int = 5) -> List[Dict[str, Any]]:
+def fetch_ats_direct_jobs(per_company_limit: int = 5) -> List[Dict[str, Any]]:
     """
-    Fetches live engineering jobs directly from company public ATS APIs (Greenhouse, Lever, Ashby)
-    with zero proxy costs and fast execution times.
+    Fetches live engineering jobs directly from company ATS APIs (Greenhouse, Lever, Ashby).
+    Zero proxy cost. Applies per-company limits to ensure all companies are sampled.
+
+    Args:
+        per_company_limit: Max jobs to return per company (default 5).
+                           Total max = per_company_limit * len(TARGET_COMPANIES).
     """
-    jobs = []
+    all_jobs = []
+    fetch_errors = []
+
+    ATS_FETCHERS = {
+        "greenhouse": fetch_greenhouse_jobs,
+        "lever":      fetch_lever_jobs,
+        "ashby":      fetch_ashby_jobs,
+    }
 
     for comp in TARGET_COMPANIES:
         try:
-            # 1. GREENHOUSE ATS API
-            if comp["ats"] == "greenhouse":
-                url = f"https://boards-api.greenhouse.io/v1/boards/{comp['slug']}/jobs?content=true"
-                res = requests.get(url, timeout=8).json()
-                for item in res.get("jobs", []):
-                    title = item.get("title", "").strip()
-                    raw_content = item.get("content", "")
-                    clean_jd = clean_html(raw_content)
+            fetcher = ATS_FETCHERS.get(comp["ats"])
+            if not fetcher:
+                print(f"⚠️  Unknown ATS vendor '{comp['ats']}' for {comp['name']} — skipping.")
+                continue
 
-                    if passes_tier1_title_filter(title) and passes_tier2_yoe_filter(clean_jd):
-                        jobs.append({
-                            "platform": f"Direct ATS ({comp['name']})",
-                            "company": comp['name'],
-                            "role": title,
-                            "url": item.get("absolute_url", ""),
-                            "location": item.get("location", {}).get("name", "Remote"),
-                            "jd_text": clean_jd[:4000]
-                        })
-
-            # 2. LEVER ATS API
-            elif comp["ats"] == "lever":
-                url = f"https://api.lever.co/v0/postings/{comp['slug']}?mode=json"
-                res = requests.get(url, timeout=8).json()
-                for item in res if isinstance(res, list) else []:
-                    title = item.get("text", "").strip()
-                    raw_content = item.get("descriptionPlain", "") or item.get("description", "")
-                    clean_jd = clean_html(raw_content)
-
-                    if passes_tier1_title_filter(title) and passes_tier2_yoe_filter(clean_jd):
-                        jobs.append({
-                            "platform": f"Direct ATS ({comp['name']})",
-                            "company": comp["name"],
-                            "role": title,
-                            "url": item.get("hostedUrl", ""),
-                            "location": item.get("categories", {}).get("location", "Remote"),
-                            "jd_text": clean_jd[:4000]
-                        })
-
-            # 3. ASHBY ATS API
-            elif comp["ats"] == "ashby":
-                url = f"https://api.ashbyhq.com/posting-api/job-board/{comp['slug']}"
-                res = requests.get(url, timeout=8).json()
-                for item in res.get("jobs", []):
-                    title = item.get("title", "").strip()
-                    raw_content = item.get("descriptionPlain", "") or item.get("descriptionHtml", "")
-                    clean_jd = clean_html(raw_content)
-
-                    if passes_tier1_title_filter(title) and passes_tier2_yoe_filter(clean_jd):
-                        location_name = item.get("locationName") or item.get("location", "Remote")
-                        jobs.append({
-                            "platform": f"Direct ATS ({comp['name']})",
-                            "company": comp["name"],
-                            "role": title,
-                            "url": item.get("jobUrl") or item.get("applyUrl", ""),
-                            "location": location_name,
-                            "jd_text": clean_jd[:4000]
-                        })
-
-            if len(jobs) >= limit:
-                break
+            company_jobs = fetcher(comp, per_company_limit)
+            all_jobs.extend(company_jobs)
+            print(f"✅ {comp['name']} ({comp['ats']}): {len(company_jobs)} jobs retained.")
 
         except Exception as e:
-            print(f"⚠️ Direct ATS API fetch failed for {comp['name']}: {str(e)}")
+            error_msg = f"{comp['name']}: {str(e)}"
+            fetch_errors.append(error_msg)
+            print(f"❌ ATS fetch failed — {error_msg}")
 
-    # Instrument Telemetry
     langfuse.update_current_span(
         metadata={
-            "target_companies": str([c["name"] for c in TARGET_COMPANIES]),
-            "jobs_found": len(jobs)
+            "target_companies": [c["name"] for c in TARGET_COMPANIES],
+            "total_jobs_found": len(all_jobs),
+            "fetch_errors": fetch_errors,
+            "per_company_limit": per_company_limit
         }
     )
 
-    print(f"✅ DIRECT ATS MCP: Retained {len(jobs)} relevant engineering job postings.")
-    return jobs
+    print(f"\n📊 ATS DIRECT MCP SUMMARY: {len(all_jobs)} jobs across {len(TARGET_COMPANIES)} companies.")
+    if fetch_errors:
+        print(f"⚠️  {len(fetch_errors)} companies had errors: {fetch_errors}")
+
+    return all_jobs
 
 
 if __name__ == "__main__":

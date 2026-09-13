@@ -2,6 +2,7 @@ import os
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 from dotenv import load_dotenv
 from docx import Document
 from docx.shared import Pt, Inches
@@ -18,19 +19,31 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 mcp = MCPServer("DispatchServer")
-langfuse = get_client()
 load_dotenv()
 
 OUTPUT_DIR = Path(__file__).parent / "output_resumes"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-DATA_PATH = Path(__file__).parent.parent / "master_profile.json"
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 
 def _load_profile() -> Dict[str, Any]:
-    with open(DATA_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """Locates and loads master_profile.json from project paths."""
+    candidate_paths = [
+        Path(__file__).parent.parent / "master_profile.json",
+        Path(__file__).parent / "master_profile.json",
+        Path("master_profile.json")
+    ]
+    for p in candidate_paths:
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+
+    try:
+        from OtherMCP.ground_truth_mcp import _load_profile as load_gt
+        return load_gt()
+    except Exception as e:
+        raise FileNotFoundError(f"master_profile.json not found in candidate paths. Error: {str(e)}")
 
 
 def set_spacing(paragraph, space_before=0, space_after=2, line_spacing=1.15):
@@ -45,30 +58,35 @@ def set_spacing(paragraph, space_before=0, space_after=2, line_spacing=1.15):
 # ------------------------------------------------------------------
 
 def _get_drive_service():
-    """
-    Authenticates with Google Drive API.
-    Supports either Service Account (service_account.json) or OAuth (credentials.json / token.json).
-    """
     creds = None
     service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
     token_path = Path(__file__).parent / "token.json"
     credentials_path = Path(__file__).parent / "credentials.json"
 
-    # Option A: Service Account (Best for autonomous backend agents)
     if os.path.exists(service_account_path):
         creds = service_account.Credentials.from_service_account_file(
             service_account_path, scopes=DRIVE_SCOPES
         )
-    # Option B: OAuth User Credentials (Fallback)
     elif token_path.exists():
-        creds = Credentials.from_authorized_user_file(str(token_path), DRIVE_SCOPES)
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+        try:
+            creds = Credentials.from_authorized_user_file(str(token_path), DRIVE_SCOPES)
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                with open(token_path, "w", encoding="utf-8") as token_file:
+                    token_file.write(creds.to_json())
+        except Exception as e:
+            print(f"⚠️ Error loading/refreshing token.json: {str(e)}")
+            creds = None
+
     elif credentials_path.exists():
-        flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), DRIVE_SCOPES)
-        creds = flow.run_local_server(port=0)
-        with open(token_path, "w") as token:
-            token.write(creds.to_json())
+        try:
+            flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), DRIVE_SCOPES)
+            creds = flow.run_local_server(port=0)
+            with open(token_path, "w", encoding="utf-8") as token_file:
+                token_file.write(creds.to_json())
+        except Exception as e:
+            print(f"⚠️ Error authenticating via credentials.json: {str(e)}")
+            creds = None
 
     if not creds:
         return None
@@ -77,14 +95,10 @@ def _get_drive_service():
 
 
 def _upload_to_google_drive(file_path: Path, convert_to_gdoc: bool = True) -> Dict[str, str]:
-    """
-    Uploads a local .docx file to Google Drive.
-    Optionally converts it directly into Google Docs format.
-    """
     try:
         service = _get_drive_service()
         if not service:
-            print("⚠️ Google Drive credentials not found. Skipping Drive upload.")
+            print("⚠️ Google Drive service not initialized. Skipping Drive upload.")
             return {"status": "skipped", "drive_url": None}
 
         folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
@@ -93,7 +107,6 @@ def _upload_to_google_drive(file_path: Path, convert_to_gdoc: bool = True) -> Di
         if folder_id:
             file_metadata["parents"] = [folder_id]
 
-        # Convert to Google Docs format for instant online viewing/editing
         if convert_to_gdoc:
             file_metadata["mimeType"] = "application/vnd.google-apps.document"
 
@@ -111,6 +124,14 @@ def _upload_to_google_drive(file_path: Path, convert_to_gdoc: bool = True) -> Di
 
         file_id = drive_file.get("id")
         web_link = drive_file.get("webViewLink")
+
+        try:
+            service.permissions().create(
+                fileId=file_id,
+                body={'type': 'anyone', 'role': 'reader'}
+            ).execute()
+        except Exception as perm_err:
+            print(f"⚠️ Permission grant warning: {str(perm_err)}")
 
         print(f"☁️ Google Drive Upload Successful! File ID: {file_id}")
         return {
@@ -131,28 +152,22 @@ def _upload_to_google_drive(file_path: Path, convert_to_gdoc: bool = True) -> Di
 @observe(name="Dispatch: Generate ATS Resume Document")
 @mcp.tool()
 def generate_tailored_resume_docx(
-    company_name: str,
-    role_title: str,
-    tailored_summary: str,
-    tailored_bullets: List[Dict[str, Any]]
+        company_name: str,
+        role_title: str,
+        tailored_summary: str,
+        tailored_bullets: List[Dict[str, Any]]
 ) -> Dict[str, str]:
-    """
-    Generates a clean, ATS-friendly .docx resume, saves it locally in output_resumes/,
-    and uploads it to Google Drive. Returns local path and Google Drive URL.
-    """
     profile = _load_profile()
     info = profile["personal_info"]
 
     doc = Document()
 
-    # 1. Page Margins (0.5 inch top/bottom, 0.6 left/right)
     for section in doc.sections:
         section.top_margin = Inches(0.5)
         section.bottom_margin = Inches(0.5)
         section.left_margin = Inches(0.6)
         section.right_margin = Inches(0.6)
 
-    # 2. Header Block (Name + Contact Info)
     name_p = doc.add_paragraph()
     set_spacing(name_p, space_after=2)
     name_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -178,7 +193,6 @@ def generate_tailored_resume_docx(
         run.font.bold = True
         return p
 
-    # 3. Summary Section
     add_section_heading("Summary")
     sum_p = doc.add_paragraph()
     set_spacing(sum_p, space_after=8)
@@ -186,7 +200,6 @@ def generate_tailored_resume_docx(
     sum_run.font.name = "Arial"
     sum_run.font.size = Pt(10)
 
-    # 4. Experience Section
     add_section_heading("Experience")
     bullet_map = {b.get("original_bullet", ""): b.get("tailored_bullet", "") for b in tailored_bullets}
 
@@ -204,7 +217,10 @@ def generate_tailored_resume_docx(
         details_run.font.name = "Arial"
         details_run.font.size = Pt(10)
 
-        for project in exp.get("projects", []):
+        # Experience items may either group bullets under named "projects" or
+        # list flat "achievements" directly (both fields are Optional in the
+        # master profile schema, e.g. for roles without distinct projects).
+        for project in (exp.get("projects") or []):
             proj_p = doc.add_paragraph()
             set_spacing(proj_p, space_before=2, space_after=2)
             proj_run = proj_p.add_run(project["name"])
@@ -213,7 +229,7 @@ def generate_tailored_resume_docx(
             proj_run.font.bold = True
             proj_run.font.italic = True
 
-            for orig_bullet in project.get("achievements", []):
+            for orig_bullet in (project.get("achievements") or []):
                 bullet_text = bullet_map.get(orig_bullet, orig_bullet)
                 bp = doc.add_paragraph(style='List Bullet')
                 set_spacing(bp, space_before=0, space_after=2)
@@ -221,7 +237,14 @@ def generate_tailored_resume_docx(
                 b_run.font.name = "Arial"
                 b_run.font.size = Pt(9.5)
 
-    # 5. Skills Section
+        for orig_bullet in (exp.get("achievements") or []):
+            bullet_text = bullet_map.get(orig_bullet, orig_bullet)
+            bp = doc.add_paragraph(style='List Bullet')
+            set_spacing(bp, space_before=0, space_after=2)
+            b_run = bp.add_run(bullet_text)
+            b_run.font.name = "Arial"
+            b_run.font.size = Pt(9.5)
+
     add_section_heading("Skills")
     skills = profile.get("skills", {})
 
@@ -239,15 +262,32 @@ def generate_tailored_resume_docx(
         list_run.font.name = "Arial"
         list_run.font.size = Pt(9.5)
 
-    # 6. Education Section
     add_section_heading("Education")
+    edu_data = profile.get("education", {})
     edu_p = doc.add_paragraph()
     set_spacing(edu_p, space_before=2, space_after=2)
-    edu_run = edu_p.add_run(profile["education"])
-    edu_run.font.name = "Arial"
-    edu_run.font.size = Pt(9.5)
 
-    # Save to local file
+    if isinstance(edu_data, dict):
+        degree = edu_data.get("degree", "")
+        inst = edu_data.get("institution", "")
+        period = edu_data.get("period", "")
+        edu_text = f"{degree} — {inst} ({period})" if period else f"{degree} — {inst}"
+
+        edu_run = edu_p.add_run(edu_text)
+        edu_run.font.name = "Arial"
+        edu_run.font.size = Pt(9.5)
+
+        for ach in edu_data.get("achievements", []):
+            ach_p = doc.add_paragraph(style='List Bullet')
+            set_spacing(ach_p, space_before=0, space_after=2)
+            ach_run = ach_p.add_run(ach)
+            ach_run.font.name = "Arial"
+            ach_run.font.size = Pt(9)
+    else:
+        edu_run = edu_p.add_run(str(edu_data))
+        edu_run.font.name = "Arial"
+        edu_run.font.size = Pt(9.5)
+
     safe_company = "".join([c for c in company_name if c.isalnum() or c in (" ", "_")]).strip()
     safe_role = "".join([c for c in role_title if c.isalnum() or c in (" ", "_")]).strip()
     file_name = f"ATS_Resume_Sahil_Garg_{safe_company}_{safe_role}.docx".replace(" ", "_")
@@ -256,19 +296,21 @@ def generate_tailored_resume_docx(
     doc.save(str(output_path))
     print(f"📄 Local Resume Saved: {output_path}")
 
-    # 7. Upload to Google Drive
     drive_result = _upload_to_google_drive(output_path, convert_to_gdoc=True)
 
-    # Log telemetry
-    langfuse.update_current_span(
-        metadata={
-            "company_name": company_name,
-            "role_title": role_title,
-            "local_path": str(output_path),
-            "drive_status": drive_result["status"],
-            "drive_url": str(drive_result.get("drive_url"))
-        }
-    )
+    try:
+        langfuse = get_client()
+        langfuse.update_current_span(
+            metadata={
+                "company_name": company_name,
+                "role_title": role_title,
+                "local_path": str(output_path),
+                "drive_status": drive_result["status"],
+                "drive_url": str(drive_result.get("drive_url"))
+            }
+        )
+    except Exception:
+        pass
 
     return {
         "local_path": str(output_path),
@@ -277,13 +319,124 @@ def generate_tailored_resume_docx(
     }
 
 
-if __name__ == "__main__":
-    sample_summary = "Software Engineer specializing in applied AI systems, custom backend tooling, and scalable enterprise platform software."
-    sample_bullets = [
-        {
-            "original_bullet": "Engineered centralized ETL architecture as sole engineer, resolving production reliability failures affecting 90+ enterprise client environments.",
-            "tailored_bullet": "Engineered centralized backend systems as sole engineer, resolving production reliability failures across 90+ enterprise client environments."
-        }
-    ]
-    res = generate_tailored_resume_docx("Palantir", "Forward Deployed Engineer", sample_summary, sample_bullets)
-    print(f"Result: {res}")
+# ------------------------------------------------------------------
+# Cover Letter Generation Tool
+# ------------------------------------------------------------------
+
+@observe(name="Dispatch: Generate Cover Letter Document")
+@mcp.tool()
+def generate_cover_letter_docx(
+        company_name: str,
+        role_title: str,
+        cover_letter_data: Dict[str, Any]
+) -> Dict[str, str]:
+    """
+    Renders structured cover letter output into an executive DOCX document,
+    saves it locally, and uploads it to Google Drive.
+    """
+    profile = _load_profile()
+    info = profile["personal_info"]
+
+    doc = Document()
+
+    for section in doc.sections:
+        section.top_margin = Inches(0.75)
+        section.bottom_margin = Inches(0.75)
+        section.left_margin = Inches(0.75)
+        section.right_margin = Inches(0.75)
+
+    # 1. Header Block
+    name_p = doc.add_paragraph()
+    set_spacing(name_p, space_after=2)
+    run_name = name_p.add_run(info["name"].upper())
+    run_name.font.name = "Arial"
+    run_name.font.size = Pt(14)
+    run_name.font.bold = True
+
+    contact_p = doc.add_paragraph()
+    set_spacing(contact_p, space_after=12)
+    contact_text = f"{info['email']} | +91 9109268883 | {info['linkedin']} | {info['github']}"
+    run_contact = contact_p.add_run(contact_text)
+    run_contact.font.name = "Arial"
+    run_contact.font.size = Pt(9.5)
+
+    # 2. Date Block
+    date_p = doc.add_paragraph()
+    set_spacing(date_p, space_after=12)
+    date_run = date_p.add_run(datetime.now().strftime("%B %d, %Y"))
+    date_run.font.name = "Arial"
+    date_run.font.size = Pt(10)
+
+    # 3. Salutation
+    salutation_p = doc.add_paragraph()
+    set_spacing(salutation_p, space_after=10)
+    sal_run = salutation_p.add_run(cover_letter_data.get("salutation", f"Dear Hiring Team at {company_name},"))
+    sal_run.font.name = "Arial"
+    sal_run.font.size = Pt(10.5)
+    sal_run.font.bold = True
+
+    # 4. Opening Paragraph
+    opening_p = doc.add_paragraph()
+    set_spacing(opening_p, space_after=10)
+    op_run = opening_p.add_run(cover_letter_data.get("opening_paragraph", ""))
+    op_run.font.name = "Arial"
+    op_run.font.size = Pt(10)
+
+    # 5. Body Paragraphs
+    for body_para in cover_letter_data.get("body_paragraphs", []):
+        bp = doc.add_paragraph()
+        set_spacing(bp, space_after=10)
+        bp_run = bp.add_run(body_para)
+        bp_run.font.name = "Arial"
+        bp_run.font.size = Pt(10)
+
+    # 6. Closing Paragraph
+    closing_p = doc.add_paragraph()
+    set_spacing(closing_p, space_after=16)
+    cp_run = closing_p.add_run(cover_letter_data.get("closing_paragraph", ""))
+    cp_run.font.name = "Arial"
+    cp_run.font.size = Pt(10)
+
+    # 7. Sign-off
+    sign_p = doc.add_paragraph()
+    set_spacing(sign_p, space_after=2)
+    s_run1 = sign_p.add_run("Sincerely,\n\n")
+    s_run1.font.name = "Arial"
+    s_run1.font.size = Pt(10)
+
+    s_run2 = sign_p.add_run(info["name"])
+    s_run2.font.name = "Arial"
+    s_run2.font.size = Pt(10.5)
+    s_run2.font.bold = True
+
+    # Save to local file
+    safe_company = "".join([c for c in company_name if c.isalnum() or c in (" ", "_")]).strip()
+    safe_role = "".join([c for c in role_title if c.isalnum() or c in (" ", "_")]).strip()
+    file_name = f"Cover_Letter_Sahil_Garg_{safe_company}_{safe_role}.docx".replace(" ", "_")
+    output_path = OUTPUT_DIR / file_name
+
+    doc.save(str(output_path))
+    print(f"📄 Local Cover Letter Saved: {output_path}")
+
+    # Upload to Google Drive
+    drive_result = _upload_to_google_drive(output_path, convert_to_gdoc=True)
+
+    try:
+        langfuse = get_client()
+        langfuse.update_current_span(
+            metadata={
+                "company_name": company_name,
+                "role_title": role_title,
+                "local_path": str(output_path),
+                "drive_status": drive_result["status"],
+                "drive_url": str(drive_result.get("drive_url"))
+            }
+        )
+    except Exception:
+        pass
+
+    return {
+        "local_path": str(output_path),
+        "drive_url": drive_result.get("drive_url") or "Upload skipped or failed",
+        "file_id": drive_result.get("file_id", "")
+    }
