@@ -14,6 +14,9 @@ SubAgents/applications_log.json
 
 # Python & IDE
 __pycache__/
+JobSearchMCP/__pycache__/
+OtherMCP/__pycache__/
+SubAgents/__pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/

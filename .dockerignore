@@ -1,5 +1,8 @@
 .venv/
 __pycache__/
+JobSearchMCP/__pycache__/
+OtherMCP/__pycache__/
+SubAgents/__pycache__/
 *.pyc
 *.pyo
 *.pyd
