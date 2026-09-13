@@ -100,12 +100,12 @@ SubAgents/                  Where the thinking/writing happens
   resume_tailoring_agent.py       Tailors resume content per job
   cover_letter_agent.py           Writes a cover letter per job
   hiring_manager_dm_agent.py      Drafts outreach messages to hiring managers
-  personal_ops_agent.py           Daily activity summary
 
-OtherMCP/                    Supporting utilities
+OtherMCP/                    Supporting utilities (deterministic tools, no LLM calls)
   ground_truth_mcp.py              Guardrail — flags unverifiable claims
   dispatch_mcp.py                  Builds resume/cover-letter Google Docs
   notification_mcp.py             Sends the daily briefing email
+  personal_ops_mcp.py              Logs applications & builds the daily activity summary
 
 db_manager.py               Tracks processed jobs/leads so nothing repeats
 ```
@@ -243,3 +243,20 @@ introduce a number or achievement that isn't backed by that file, it's
 rejected rather than sent out. The goal is that everything the system
 produces on your behalf is something you'd be comfortable standing behind in
 an interview.
+
+## A note on how Gemini is called
+
+Every agent in `SubAgents/` uses a single-pass `client.models.generate_content()`
+call — either asking for a structured (Pydantic) response, like a job analysis
+or a match score, or a plain piece of text, like a cover letter or an outreach
+message. None of them run a multi-turn conversation where Gemini decides on
+its own to call other functions in a loop.
+
+That's intentional: this project's tasks are naturally one-shot (read this,
+score it, write that), and Google's own guidance is that automatic function
+calling — where the model autonomously chooses and invokes tools — should
+only be done through a chat session (`client.chats.create()` +
+`chat.send_message()`), not through `generate_content()` directly. If a future
+addition to this project needs Gemini to decide, mid-task, to call one or
+more Python functions and react to their results, that step should be built
+as a chat session rather than added onto an existing `generate_content()` call.

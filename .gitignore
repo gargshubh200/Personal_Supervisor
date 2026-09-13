@@ -11,7 +11,6 @@ OtherMCP/token.json
 *.pdf
 *.log
 SubAgents/applications_log.json
-agent_architecture_graph.png
 
 # Python & IDE
 __pycache__/

@@ -27,6 +27,9 @@ client = genai.Client(
     project="career-os-project",
     location="global"
 )
+# Single-pass structured extraction (response_schema) -> client.models.generate_content().
+# This is not a multi-turn/tool-calling agent loop, so automatic function calling (which
+# Google recommends only via Chat.send_message) is not a concern here.
 
 
 class ApplicationStrategyOutput(BaseModel):

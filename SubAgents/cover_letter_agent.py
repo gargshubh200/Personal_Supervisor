@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -28,6 +29,28 @@ client = genai.Client(
     project="career-os-project",
     location="global"
 )
+# Single-pass structured extraction (response_schema) -> client.models.generate_content().
+# This is not a multi-turn/tool-calling agent loop, so automatic function calling (which
+# Google recommends only via Chat.send_message) is not a concern here.
+
+# Explicit deterministic tool: canned/boilerplate opening detection.
+# Previously this was enforced only via an LLM reviewer instruction ("penalize
+# heavily if the opening uses a generic formula"), which depends on the model
+# reliably following that instruction every time. Since this is a simple,
+# literal pattern match, it's more reliable as a hard Python check — same
+# pattern as `verify_claim()` in ground_truth_mcp.py.
+GENERIC_OPENING_PHRASES_REGEX = re.compile(
+    r"i am writing to (express|apply|submit)|"
+    r"i am (thrilled|excited|delighted) to (apply|submit|express)|"
+    r"please accept this (letter|application)|"
+    r"i am excited about the opportunity",
+    re.IGNORECASE
+)
+
+
+def _opening_is_generic(opening_paragraph: str) -> bool:
+    """Returns True if the opening paragraph starts with a canned/template hook."""
+    return bool(GENERIC_OPENING_PHRASES_REGEX.search(opening_paragraph))
 
 
 class CoverLetterOutput(BaseModel):
@@ -118,6 +141,20 @@ def verify_cover_letter_safety(cover_letter: CoverLetterOutput) -> Dict[str, Any
         })
         if not check["verified"]:
             has_violations = True
+
+    # Deterministic hard gate: reject canned/template opening hooks outright
+    # instead of relying solely on the LLM reviewer to catch and penalize them.
+    if _opening_is_generic(cover_letter.opening_paragraph):
+        has_violations = True
+        audit_results.append({
+            "paragraph": cover_letter.opening_paragraph[:100] + "...",
+            "verified": False,
+            "details": {
+                "verified": False,
+                "reason": "Opening paragraph uses a generic/template phrase (e.g. 'I am writing to express...'). "
+                          "Rewrite with a direct, high-impact technical hook."
+            }
+        })
 
     return {
         "passed_audit": not has_violations,

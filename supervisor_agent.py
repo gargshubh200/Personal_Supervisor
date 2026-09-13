@@ -17,8 +17,8 @@ from SubAgents.matching_agent import evaluate_candidate_match
 from SubAgents.application_strategy_agent import determine_application_strategy
 from SubAgents.resume_tailoring_agent import run_resume_tailoring_workflow
 from SubAgents.cover_letter_agent import run_cover_letter_workflow
-from SubAgents.personal_ops_agent import generate_daily_standup_report
 
+from OtherMCP.personal_ops_mcp import generate_daily_standup_report
 from OtherMCP.ground_truth_mcp import _load_profile
 from OtherMCP.dispatch_mcp import generate_tailored_resume_docx, generate_cover_letter_docx
 
@@ -179,6 +179,14 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
         raw_jobs.extend(search_ats_via_google_dork(limit=5))
     if MCP_TOGGLES.get("linkedin_jobs"):
         raw_jobs.extend(fetch_linkedin_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit_per_query=2))
+    if MCP_TOGGLES.get("indeed"):
+        raw_jobs.extend(fetch_indeed_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5))
+    if MCP_TOGGLES.get("wellfound"):
+        raw_jobs.extend(fetch_wellfound_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5))
+    if MCP_TOGGLES.get("glassdoor"):
+        raw_jobs.extend(fetch_glassdoor_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5))
+    if MCP_TOGGLES.get("ambitionbox"):
+        raw_jobs.extend(fetch_ambitionbox_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5))
 
     seen_signatures = set()
     all_jobs = []
