@@ -8,3 +8,5 @@ __pycache__/
 .env
 OtherMCP/output_resumes/
 SubAgents/applications_log.json
+career_os_workflow_graph.png
+generate_workflow_graph.py
