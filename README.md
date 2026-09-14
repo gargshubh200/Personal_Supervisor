@@ -24,11 +24,12 @@ each one already accompanied by a tailored resume and cover letter.
 ## How it thinks about you
 
 Your real work history lives in one file: `master_profile.json`. It's a
-structured version of your resume — companies, roles, projects, verified
-metrics (the kind of thing you'd normally have to remember to mention), and
-skills. Every downstream step — matching, resume tailoring, cover letters,
-outreach messages — pulls facts from this file instead of inventing them, so
-nothing gets exaggerated or made up along the way.
+structured version of your resume — companies, roles, employer-scoped
+projects, a standalone "Projects" section (personal/side projects not tied to
+any job), verified metrics (the kind of thing you'd normally have to remember
+to mention), and skills. Every downstream step — matching, resume tailoring,
+cover letters, outreach messages — pulls facts from this file instead of
+inventing them, so nothing gets exaggerated or made up along the way.
 
 You don't have to maintain this file by hand. Drop an updated resume
 (`.docx` or `.pdf`) into `CandidateResumeDoc/`, and the system will read it and
@@ -47,9 +48,12 @@ Each run walks through the same sequence of steps, in order:
 2. **Look for hiring-manager posts on LinkedIn.** Instead of only reading job
    board listings, the system also searches LinkedIn for posts where someone is
    actively hiring — those posts tend to be fresher and less crowded than a
-   public job listing. Each post is checked for whether it genuinely mentions a
-   role and hiring intent that match (not just something the search happened to
-   surface), and a short outreach message is drafted for the ones that pass.
+   public job listing. Every non-genuine author (recruiters, staffing
+   agencies, job-board pages) is filtered out, and each remaining post is
+   checked for whether it genuinely mentions the role *and* a real hiring-intent
+   phrase (accepting reasonable phrasing variants, e.g. "we are hiring" as well
+   as "we're hiring") — not just something the search happened to surface — and
+   a short outreach message is drafted for the ones that pass.
 
 3. **Collect job listings.** Several sources are checked in parallel — direct
    company career pages, targeted search-engine queries against known applicant

@@ -69,6 +69,37 @@ HIRING_PATTERNS = {
     ]
 }
 
+# Broader set of acceptable phrasings PER PATTERN CATEGORY, used only for the
+# post-hoc content-confirmation gate (_content_confirms_hiring_signal), never
+# sent to the actor as part of the Boolean query. HarvestAPI's semantic search
+# can genuinely surface a post that uses an equivalent phrase (e.g. "we are
+# hiring" instead of the literal query phrase "we're hiring") — restricting
+# the confirmation check to only the 3 exact query phrases would wrongly
+# reject those real leads. This list has no operator-count constraint since
+# it's plain Python substring matching, not a searchQueries string.
+CONTENT_CONFIRMATION_PATTERNS = {
+    "Pattern_A_Direct_Intent": [
+        '"i\'m hiring"', '"we\'re hiring"', '"looking for a"',
+        "we are hiring", "is hiring", "actively hiring", "currently hiring",
+        "i am hiring", "hiring a"
+    ],
+    "Pattern_B_Call_To_Action": [
+        '"dm me"', '"send me your resume"', '"apply below"',
+        "apply here", "reach out to me", "message me", "send your resume",
+        "drop your resume", "comment below"
+    ],
+    "Pattern_C_Team_Growth": [
+        '"growing the team"', '"expanding our team"', '"new headcount"',
+        "growing our team", "expanding the team", "scaling our team",
+        "adding to the team", "team is growing"
+    ],
+    "Pattern_D_AI_Platform_Specific": [
+        '"building our ai infrastructure"', '"ai systems engineer"', '"looking for a data engineer"',
+        "building our ai platform", "hiring a data engineer", "hiring an ai engineer",
+        "generative ai engineer", "ai infrastructure engineer"
+    ]
+}
+
 # ── SEARCH ROLES ──────────────────────────────────────────────────────────────
 # Use natural language terms that hiring managers write in posts,
 # NOT formal JD titles like "Forward Deployed Engineer".
@@ -496,8 +527,12 @@ def search_hiring_manager_posts(
                             continue
 
                         # Post-content confirmation gate: reject if the actor's fuzzy
-                        # match didn't actually contain our role + pattern signal.
-                        if not _content_confirms_hiring_signal(post_content, role, patterns[:3]):
+                        # match didn't actually contain our role + a genuine hiring-intent
+                        # signal. Uses the broader CONTENT_CONFIRMATION_PATTERNS variants
+                        # (not just the 3 literal query phrases) so real posts phrased
+                        # slightly differently than our Boolean query aren't wrongly dropped.
+                        confirmation_phrases = CONTENT_CONFIRMATION_PATTERNS.get(pattern_name, patterns[:3])
+                        if not _content_confirms_hiring_signal(post_content, role, confirmation_phrases):
                             print(f"🛡️  Filtered non-genuine match (no literal role/pattern signal): {post_url}")
                             continue
 

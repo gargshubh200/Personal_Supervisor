@@ -1,12 +1,12 @@
 {
   "personal_info": {
-    "name": "Sahil Garg",
+    "name": "SAHIL GARG",
     "email": "gargshubh200@gmail.com",
     "linkedin": "linkedin.com/in/iamsahilgarg",
     "github": "github.com/gargshubh200",
     "target_roles": [
       "Software Engineer",
-      "Applied AI Engineer",
+      "AI Engineer",
       "Backend Engineer"
     ]
   },
@@ -21,10 +21,8 @@
         {
           "name": "Centralized Continuous Monitoring (CCM)",
           "achievements": [
-            "Engineered the centralized ETL architecture as sole engineer, resolving production reliability and data correctness failures affecting 90+ enterprise client environments.",
+            "Engineered the centralized ETL architecture as sole engineer, resolving production reliability and data correctness failures affecting 90+ enterprise client environments. Also, authored the complete product TDD and user documentation.",
             "Accelerated client deployment speed - achieving a 98% overall onboarding reduction (15 days to <3 hours) across two architectural iterations by eliminating client-side manual configuration.",
-            "Owned engineering coordination for production onboarding and stabilization across 90+ enterprise environments, resolving cross-environment issues without a dedicated support team.",
-            "Authored the complete product TDD and user documentation, reducing onboarding-related support tickets and engineering dependency.",
             "Spearheaded the strategic migration of 7 enterprise ETL workflows from legacy SSIS to a Kubernetes-backed Spark platform, achieving a 40% reduction in data processing time."
           ]
         },
@@ -39,9 +37,8 @@
         {
           "name": "Entity Ranking & Semantic Context Generation",
           "achievements": [
-            "Engineered an agentic data pipeline transforming metadata and usage logs across 4 entity types into a structured semantic knowledge layer for an AI planning agent.",
-            "Constructed a PageRank-based entity ranking engine on a bipartite graph, combining structural connectivity with behavioral usage scoring deployed across 4 prominent enterprise clients.",
-            "Implemented a two-pass LLM pipeline generating a domain-grounded semantic model, producing a 15-cluster knowledge layer covering the full planning domain.",
+            "Engineered an agentic data pipeline transforming metadata and usage logs across 4 entity types into a structured semantic knowledge layer for an AI planning agent deployed across 4 prominent enterprise clients.",
+            "Constructed a PageRank-based entity ranking engine on a bipartite graph, combining structural connectivity with behavioral usage scoring, a two-pass LLM pipeline generating a domain-grounded semantic model, producing a 15-cluster knowledge layer covering the full planning domain.",
             "Developed a skills-based agent framework with deterministic reasoning workflows and runtime semantic retrieval - reducing prompt sizes and driving a 60% reduction in query resolution time."
           ]
         }
@@ -110,6 +107,17 @@
       "verification_status": "candidate_claimed"
     },
     {
+      "metric": "Enterprise ETL workflows migrated",
+      "value": {
+        "raw_value": "7",
+        "before": null,
+        "after": null
+      },
+      "source": "resume",
+      "evidence": "Spearheaded the strategic migration of 7 enterprise ETL workflows from legacy SSIS to a Kubernetes-backed Spark platform, achieving a 40% reduction in data processing time.",
+      "verification_status": "candidate_claimed"
+    },
+    {
       "metric": "Enterprise clients adopted monitoring platform",
       "value": {
         "raw_value": "15+",
@@ -119,31 +127,65 @@
       "source": "resume",
       "evidence": "Architected a grammar-driven log obfuscation engine (ANTLR) that resolved a compliance-critical deployment blocker, expediting monitoring platform adoption for over 15 enterprise clients.",
       "verification_status": "candidate_claimed"
+    },
+    {
+      "metric": "Entity types transformed",
+      "value": {
+        "raw_value": "4",
+        "before": null,
+        "after": null
+      },
+      "source": "resume",
+      "evidence": "Engineered an agentic data pipeline transforming metadata and usage logs across 4 entity types into a structured semantic knowledge layer for an AI planning agent deployed across 4 prominent enterprise clients.",
+      "verification_status": "candidate_claimed"
+    },
+    {
+      "metric": "Enterprise clients deployed AI agent",
+      "value": {
+        "raw_value": "4",
+        "before": null,
+        "after": null
+      },
+      "source": "resume",
+      "evidence": "Engineered an agentic data pipeline transforming metadata and usage logs across 4 entity types into a structured semantic knowledge layer for an AI planning agent deployed across 4 prominent enterprise clients.",
+      "verification_status": "candidate_claimed"
+    },
+    {
+      "metric": "Knowledge layer clusters",
+      "value": {
+        "raw_value": "15-cluster",
+        "before": null,
+        "after": null
+      },
+      "source": "resume",
+      "evidence": "Constructed a PageRank-based entity ranking engine on a bipartite graph, combining structural connectivity with behavioral usage scoring, a two-pass LLM pipeline generating a domain-grounded semantic model, producing a 15-cluster knowledge layer covering the full planning domain.",
+      "verification_status": "candidate_claimed"
     }
   ],
   "skills": {
     "languages_and_tools": [
       "Python",
       "SQL",
-      "REST APIs"
+      "REST APIs",
+      "Pydantic",
+      "LLM APIs"
     ],
     "ai_and_agentic": [
+      "Google ADK",
       "LangChain",
       "LangGraph",
-      "LangSmith",
       "Langfuse",
-      "Google ADK",
-      "LLM APIs",
-      "Multi-Agent Systems",
+      "Multi-Agent Workflows",
       "Vertex AI",
-      "Memory Management"
+      "RAG",
+      "Tool Calling"
     ],
     "llm_concepts": [
-      "RAG",
-      "Tool Calling",
       "Prompt Engineering",
       "Context Management",
-      "Chain-of-Thought Reasoning"
+      "Chain-of-Thought Reasoning",
+      "Memory Management",
+      "Fine Tuning"
     ],
     "data_and_orchestration": [
       "Apache Spark",
@@ -151,7 +193,8 @@
       "Databricks (Delta Lake)",
       "Apache Airflow",
       "SSIS",
-      "Apache Kafka"
+      "Apache Kafka",
+      "Firestore"
     ],
     "cloud_and_infra": [
       "Kubernetes",
@@ -161,8 +204,7 @@
       "Cloud Storage (S3, GCS, ADLS)",
       "Redis",
       "Elasticsearch",
-      "Solr",
-      "RabbitMQ"
+      "Google Cloud Run"
     ],
     "specialized": [
       "ANTLR",
@@ -179,5 +221,30 @@
     "achievements": [
       "CGPA: 8.25 / 10"
     ]
-  }
+  },
+  "projects": [
+    {
+      "name": "Autonomous Job Search Agent",
+      "description": "A multi-stage agentic job-search system orchestrating MCP-based job discovery, JD analysis, candidate matching, and automated document generation.",
+      "tech_stack": [
+        "Python",
+        "Google ADK",
+        "Vertex AI",
+        "Cloud Run",
+        "Docker",
+        "Pydantic",
+        "Firestore",
+        "Langfuse",
+        "Gmail API",
+        "Google Drive API",
+        "Google Docs API"
+      ],
+      "achievements": [
+        "Engineered and deployed a multi-stage agentic job-search system on Google Cloud Run, orchestrating MCP-based job discovery, JD analysis, candidate matching, application strategy, and personalized document generation using Firestore for state persistence.",
+        "Implemented a ground-truth audit pass guardrail validating LLM tailored resume content against a structured candidate profile schema prior to automated document generation via Google Drive/Docs APIs.",
+        "Integrated Langfuse for full-pipeline span tracing and used Gmail API for automated daily briefing delivery."
+      ],
+      "url": "github.com/gargshubh200/Personal_Supervisor"
+    }
+  ]
 }

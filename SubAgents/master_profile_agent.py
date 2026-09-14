@@ -67,6 +67,15 @@ class Project(BaseModel):
     achievements: List[str]
 
 
+class StandaloneProject(BaseModel):
+    """A project from a resume's independent 'PROJECTS' section (not tied to a specific employer)."""
+    name: str
+    description: Optional[str] = Field(default=None, description="1-2 line summary of what the project does/solves")
+    tech_stack: List[str] = Field(default_factory=list, description="Technologies/tools/languages used")
+    achievements: List[str] = Field(default_factory=list, description="Verbatim bullet points describing what was built/achieved")
+    url: Optional[str] = Field(default=None, description="Live demo, repo, or writeup link if present in the resume")
+
+
 class ExperienceItem(BaseModel):
     company: str
     role: str
@@ -99,6 +108,10 @@ class MasterProfileSchema(BaseModel):
     candidate_claims: List[CandidateClaim] = Field(description="Itemized quantitative claims extracted from source documents")
     skills: SkillsCategory
     education: Education
+    projects: Optional[List[StandaloneProject]] = Field(
+        default=None,
+        description="Standalone projects from the resume's independent 'PROJECTS' section, not tied to any employer"
+    )
 
 
 # ------------------------------------------------------------------
@@ -168,6 +181,9 @@ def generate_master_profile(resume_file_path: str) -> Dict[str, Any]:
     5. Deconstruct metric deltas into 'raw_value', 'before', and 'after' fields wherever baseline/improved states exist.
     6. Categorize all technical skills into the specified skill categories.
     7. Retain exact numbers, dates, and achievements without summarizing away technical details.
+    8. If the resume has a standalone "PROJECTS" section (independent of any employer/job entry), extract each
+       project into the top-level 'projects' field — including its tech stack, verbatim achievement bullets, and
+       any listed URL. Do NOT confuse these with employer-scoped projects nested under 'experience[].projects'.
 
     RAW RESUME TEXT:
     {raw_resume_text}

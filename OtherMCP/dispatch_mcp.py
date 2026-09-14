@@ -262,6 +262,39 @@ def generate_tailored_resume_docx(
         list_run.font.name = "Arial"
         list_run.font.size = Pt(9.5)
 
+    standalone_projects = profile.get("projects") or []
+    if standalone_projects:
+        add_section_heading("Projects")
+        for proj in standalone_projects:
+            proj_header = doc.add_paragraph()
+            set_spacing(proj_header, space_before=4, space_after=1)
+
+            header_text = proj.get("name", "")
+            tech_stack = proj.get("tech_stack") or []
+            if tech_stack:
+                header_text += f" ({', '.join(tech_stack)})"
+
+            proj_name_run = proj_header.add_run(header_text)
+            proj_name_run.font.name = "Arial"
+            proj_name_run.font.size = Pt(10.5)
+            proj_name_run.font.bold = True
+
+            description = proj.get("description")
+            if description:
+                desc_p = doc.add_paragraph()
+                set_spacing(desc_p, space_before=0, space_after=2)
+                desc_run = desc_p.add_run(description)
+                desc_run.font.name = "Arial"
+                desc_run.font.size = Pt(9.5)
+                desc_run.font.italic = True
+
+            for ach in (proj.get("achievements") or []):
+                ach_p = doc.add_paragraph(style='List Bullet')
+                set_spacing(ach_p, space_before=0, space_after=2)
+                ach_run = ach_p.add_run(ach)
+                ach_run.font.name = "Arial"
+                ach_run.font.size = Pt(9.5)
+
     add_section_heading("Education")
     edu_data = profile.get("education", {})
     edu_p = doc.add_paragraph()

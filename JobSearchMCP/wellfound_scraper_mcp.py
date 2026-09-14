@@ -147,7 +147,7 @@ def fetch_wellfound_jobs(
                 loc_names = item.get("locationNames", [])
                 if not loc_names and item.get("acceptedRemoteLocationNames"):
                     loc_names = item.get("acceptedRemoteLocationNames")
-                job_location = loc_names if loc_names else [primary_location]
+                job_location = ", ".join(loc_names) if loc_names else primary_location
 
                 if job_url in seen_urls:
                     continue
@@ -193,7 +193,7 @@ def _fallback_wellfound_jobs() -> List[Dict[str, str]]:
         "role": "Applied AI Engineer - Agentic Systems",
         "url": "https://wellfound.com/jobs/sample",
         "compensation": "$160k – $220k • 0.1% – 0.5%",
-        "location": ["Bengaluru / Remote"],
+        "location": "Bengaluru / Remote",
         "jd_text": "Join Cognition to build autonomous AI systems and specialized Python parser engines for code generation."
     }]
 

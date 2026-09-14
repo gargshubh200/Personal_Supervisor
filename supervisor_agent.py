@@ -36,7 +36,7 @@ MCP_TOGGLES = {
     "linkedin_jobs": True,
     "indeed": True,
     "wellfound": True,
-    "glassdoor": False,
+    "glassdoor": True,
     "ambitionbox": False
 }
 
@@ -176,15 +176,15 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     if MCP_TOGGLES.get("ats_direct"):
         raw_jobs.extend(fetch_ats_direct_jobs(per_company_limit=5))
     if MCP_TOGGLES.get("ats_google_dork"):
-        raw_jobs.extend(search_ats_via_google_dork(limit=5))
+        raw_jobs.extend(search_ats_via_google_dork(limit=20))
     if MCP_TOGGLES.get("linkedin_jobs"):
-        raw_jobs.extend(fetch_linkedin_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit_per_query=2))
+        raw_jobs.extend(fetch_linkedin_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit_per_query=10))
     if MCP_TOGGLES.get("indeed"):
-        raw_jobs.extend(fetch_indeed_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5))
+        raw_jobs.extend(fetch_indeed_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=10))
     if MCP_TOGGLES.get("wellfound"):
-        raw_jobs.extend(fetch_wellfound_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5))
+        raw_jobs.extend(fetch_wellfound_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=10))
     if MCP_TOGGLES.get("glassdoor"):
-        raw_jobs.extend(fetch_glassdoor_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5))
+        raw_jobs.extend(fetch_glassdoor_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=10))
     if MCP_TOGGLES.get("ambitionbox"):
         raw_jobs.extend(fetch_ambitionbox_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5))
 
@@ -194,7 +194,14 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     for j in raw_jobs:
         company = j.get('company', '').strip()
         role = j.get('role', '').strip()
-        location = j.get('location', 'India').strip()
+        location_raw = j.get('location', 'India')
+        # Defensive normalization: some sources may (incorrectly) return a list of
+        # location names instead of a plain string. Guard against this regardless
+        # of source, so a future MCP regression doesn't crash the whole pipeline.
+        if isinstance(location_raw, list):
+            location = ", ".join(str(x) for x in location_raw).strip() or "India"
+        else:
+            location = str(location_raw).strip() or "India"
         sig = f"{company.lower()}:{role.lower()}"
 
         if any(ex_comp in company.lower() for ex_comp in CAREER_STRATEGY_CONSTRAINTS["excluded_companies"]):
