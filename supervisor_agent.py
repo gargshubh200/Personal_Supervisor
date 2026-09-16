@@ -2,6 +2,13 @@ import os
 from dotenv import load_dotenv
 from langfuse import observe
 
+from config_loader import (
+    get_mcp_toggles,
+    get_master_search_queries,
+    get_master_locations,
+    get_career_strategy_constraints,
+)
+
 from JobSearchMCP.ats_direct_mcp import fetch_ats_direct_jobs
 from JobSearchMCP.ats_google_dork_mcp import search_ats_via_google_dork
 from JobSearchMCP.linkedin_job_scraper_mcp import fetch_linkedin_jobs
@@ -29,70 +36,13 @@ from OtherMCP.notification_mcp import send_executive_briefing
 
 load_dotenv()
 
-MCP_TOGGLES = {
-    "linkedin_hiring_posts": True,
-    "ats_direct": True,
-    "ats_google_dork": True,
-    "linkedin_jobs": True,
-    "indeed": True,
-    "wellfound": True,
-    "glassdoor": True,
-    "ambitionbox": False
-}
-
-# Tightened per Agent Optimization Context: removed 'Python Developer' (too junior/generic)
-# in favor of role terms reflecting the candidate's strongest differentiators
-# (data/AI platform & infrastructure engineering).
-MASTER_SEARCH_QUERIES = [
-    "Data Platform Engineer",
-    "AI Platform Engineer",
-    "Software Engineer",
-    "AI Infrastructure Engineer"
-]
-
-MASTER_LOCATIONS = [
-    "India", "Bengaluru", "Remote", "Bangalore", "Hyderabad", "Pune"
-]
-
-# Career Strategy Constraints — Agent Optimization Context, Section 6.
-# Hard reject constraints below MUST override an APPLY decision. Preference boost/downgrade
-# lists are passed to the Application Strategy Agent LLM to adjust priority tier (not decision).
-CAREER_STRATEGY_CONSTRAINTS = {
-    # Hard Reject: company identity
-    "excluded_companies": [
-        "o9 solutions", "o9solutions", "o9",  # current employer
-        "tcs", "tata consultancy", "infosys", "wipro", "cognizant", "capgemini", "hcl"  # IT services/outsourcing
-    ],
-    # Hard Reject: role type / seniority / domain
-    "excluded_role_keywords": [
-        "forward deployed", "fde", "solutions engineer", "support engineer",
-        "salesforce", "apex", "manager", "director", "vp", "presales", "sales engineer",
-        "customer success", "pre-sales", "account executive",
-        "ml engineer", "machine learning engineer", "data scientist", "research engineer", "research scientist",
-        "full stack", "fullstack", "frontend", "front-end",
-        "android", "ios", "mobile", "react", "angular",
-        "hardware engineer", "embedded", "networking hardware", "datacenter operations",
-        "business analyst", "data analyst", "analytics engineer", "bi engineer", "reporting analyst"
-    ],
-    "preferred_role_keywords": [
-        "software engineer", "applied ai", "platform engineer",
-        "ai infrastructure", "backend engineer", "data engineer"
-    ],
-    # Preference Boost: upgrade MEDIUM -> HIGH priority
-    "preference_boost_companies": [
-        "databricks", "confluent", "grafana", "elastic", "weaviate",
-        "astronomer", "signoz", "anyscale"
-    ],
-    "preference_boost_keywords": [
-        "spark", "airflow", "delta lake", "kafka", "kubernetes",
-        "langchain", "langgraph", "rag", "agentic ai", "agentic"
-    ],
-    # Preference Downgrade: downgrade HIGH -> MEDIUM priority
-    "preference_downgrade_keywords": [
-        "terraform", "golang", "go (co-equal)", "3-5 years"
-    ],
-    "preference_downgrade_min_company_size": 10000  # large enterprises: slower hiring, less ownership
-}
+# All toggles, search terms, locations, and career strategy constraints now
+# live in config.yaml (repo root) — edit that file to tune behavior without
+# touching this code. See config_loader.py for the loading/caching logic.
+MCP_TOGGLES = get_mcp_toggles()
+MASTER_SEARCH_QUERIES = get_master_search_queries()
+MASTER_LOCATIONS = get_master_locations()
+CAREER_STRATEGY_CONSTRAINTS = get_career_strategy_constraints()
 
 
 def is_location_eligible(job_location: str, allowed_locations: list) -> bool:
@@ -174,7 +124,7 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     raw_jobs = []
 
     if MCP_TOGGLES.get("ats_direct"):
-        raw_jobs.extend(fetch_ats_direct_jobs(per_company_limit=5))
+        raw_jobs.extend(fetch_ats_direct_jobs(per_company_limit=3))
     if MCP_TOGGLES.get("ats_google_dork"):
         raw_jobs.extend(search_ats_via_google_dork(limit=20))
     if MCP_TOGGLES.get("linkedin_jobs"):

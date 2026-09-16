@@ -6,6 +6,8 @@ from apify_client import ApifyClient
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 
+from config_loader import get_master_search_queries, get_default_locations
+
 load_dotenv()
 
 # Initialize MCPServer and Langfuse client
@@ -71,20 +73,11 @@ def passes_yoe_filter(jd_text: str) -> bool:
     return not EXPERIENCE_YEAR_REJECT_REGEX.search(jd_text)
 
 
-# Tightened to 6 queries per Agent Optimization Context.
-# Removed: 'Machine Learning Engineer' (requires PyTorch/model training - not our profile),
-# 'Python Developer' (too junior/generic), 'Software Developer' (too broad/bootcamp-level),
-# 'Application Engineer' (generates o9-style internal tooling roles), 'Forward Deployed Engineer'
-# (should only be targeted at specific companies via ats_direct_mcp, not broad LinkedIn search).
-DEFAULT_SEARCH_QUERIES = [
-    "Data Platform Engineer", "AI Platform Engineer", "Platform Engineer",
-    "Data Infrastructure Engineer", "AI Infrastructure Engineer", "Software Engineer Data Systems"
-]
+# Search queries/locations are sourced from config.yaml — see indeed_scraper_mcp.py
+# comment for rationale (kept as fallback defaults; supervisor_agent.py overrides).
+DEFAULT_SEARCH_QUERIES = get_master_search_queries()
 
-DEFAULT_LOCATIONS = [
-    "India", "remote", "Bengaluru", "Bangalore", "Hyderabad", "Pune",
-    "Delhi", "Gurgaon", "Noida", "Gurugram", "Mumbai", "New Delhi"
-]
+DEFAULT_LOCATIONS = get_default_locations()
 
 
 @observe(name="LinkedInMCP: Fetch Jobs")

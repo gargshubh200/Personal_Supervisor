@@ -6,6 +6,8 @@ from apify_client import ApifyClient
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 
+from config_loader import get_master_search_queries, get_default_locations, get_india_location_keywords
+
 load_dotenv()
 
 # Initialize MCPServer and Langfuse client
@@ -71,22 +73,14 @@ def passes_yoe_filter(jd_text: str) -> bool:
     return not EXPERIENCE_YEAR_REJECT_REGEX.search(jd_text)
 
 
-# Tightened to remove noisy queries (ML Engineer, Python Developer, Software Developer,
-# Application Engineer) that skew toward IT-services/enterprise roles on Indeed.
-DEFAULT_SEARCH_QUERIES = [
-    "Data Platform Engineer", "AI Platform Engineer", "Platform Engineer",
-    "Data Infrastructure Engineer", "AI Infrastructure Engineer", "Software Engineer Data Systems"
-]
-
-DEFAULT_LOCATIONS = [
-    "India", "Remote", "Bengaluru", "Bangalore", "Hyderabad", "Pune",
-    "Delhi", "Gurgaon", "Noida", "Gurugram", "Mumbai", "New Delhi"
-]
-
-INDIA_LOCATION_KEYWORDS = {
-    "india", "bengaluru", "bangalore", "hyderabad", "pune",
-    "delhi", "gurgaon", "noida", "gurugram", "mumbai", "new delhi"
-}
+# Search queries/locations are sourced from config.yaml (search.master_search_queries /
+# search.default_locations / search.india_location_keywords) — edit that file to tune,
+# not this module. supervisor_agent.py always overrides these defaults with
+# MASTER_SEARCH_QUERIES/MASTER_LOCATIONS anyway; kept here as sane fallbacks for
+# standalone/manual invocation of this MCP.
+DEFAULT_SEARCH_QUERIES = get_master_search_queries()
+DEFAULT_LOCATIONS = get_default_locations()
+INDIA_LOCATION_KEYWORDS = set(get_india_location_keywords())
 
 
 @observe(name="IndeedMCP: Fetch Jobs")

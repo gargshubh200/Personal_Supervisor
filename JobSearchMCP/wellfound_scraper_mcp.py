@@ -6,6 +6,8 @@ from apify_client import ApifyClient
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 
+from config_loader import get_master_search_queries, get_default_locations
+
 load_dotenv()
 
 # Initialize MCPServer and Langfuse client
@@ -70,17 +72,11 @@ def passes_yoe_filter(jd_text: str) -> bool:
     return not EXPERIENCE_YEAR_REJECT_REGEX.search(jd_text)
 
 
-# Startup-specific terminology per Agent Optimization Context (Wellfound's audience
-# is startup-native — favors infra/AI-platform framing over generic titles).
-DEFAULT_SEARCH_QUERIES = [
-    "AI Backend Engineer", "Data Platform Engineer", "Platform Engineer",
-    "Infrastructure Engineer", "AI Infrastructure", "Data Engineer AI"
-]
+# Search queries/locations are sourced from config.yaml — see indeed_scraper_mcp.py
+# comment for rationale (kept as fallback defaults; supervisor_agent.py overrides).
+DEFAULT_SEARCH_QUERIES = get_master_search_queries()
 
-DEFAULT_LOCATIONS = [
-    "India", "Remote", "Bengaluru", "Bangalore", "Hyderabad", "Pune",
-    "Delhi", "Gurgaon", "Noida", "Gurugram", "Mumbai", "New Delhi"
-]
+DEFAULT_LOCATIONS = get_default_locations()
 
 
 @observe(name="WellfoundMCP: Fetch Startup Jobs")

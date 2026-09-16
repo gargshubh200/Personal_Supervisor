@@ -7,6 +7,8 @@ from apify_client import ApifyClient
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 
+from config_loader import get_master_search_queries, get_default_locations
+
 load_dotenv()
 
 # Initialize MCPServer and Langfuse client
@@ -23,16 +25,11 @@ TECHNICAL_TITLE_REGEX = re.compile(
     re.IGNORECASE
 )
 
-DEFAULT_SEARCH_QUERIES = [
-    "Forward Deployed Engineer", "Applied AI Engineer", "Software Engineer",
-    "Platform Engineer", "Application Engineer", "AI Engineer",
-    "Machine Learning Engineer", "Software Developer", "Python Developer"
-]
+# Search queries/locations are sourced from config.yaml — see indeed_scraper_mcp.py
+# comment for rationale (kept as fallback defaults; supervisor_agent.py overrides).
+DEFAULT_SEARCH_QUERIES = get_master_search_queries()
 
-DEFAULT_LOCATIONS = [
-    "India", "Remote", "Bengaluru", "Bangalore", "Hyderabad", "Pune",
-    "Delhi", "Gurgaon", "Noida", "Gurugram", "Mumbai", "New Delhi"
-]
+DEFAULT_LOCATIONS = get_default_locations()
 
 
 @observe(name="AmbitionBoxMCP: Fetch India Market Jobs")

@@ -1,0 +1,250 @@
+# ==============================================================================
+# Personal Supervisor — Central Runtime Configuration
+# ==============================================================================
+# All "setup" data (toggles, search terms, locations, company target lists,
+# career strategy constraints) lives here so it can be tuned WITHOUT touching
+# any Python code. Loaded once via config_loader.py and imported by every
+# MCP/SubAgent that needs it.
+#
+# NOT moved here (intentionally left in-code): regexes (title/YOE filters),
+# LLM system prompts, and Google-Dork query strings — these encode engineering
+# logic/behavior, not user-tunable setup data.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Which job-source MCPs run on each supervisor_agent.py pass. Flip to true/false
+# to enable/disable a source without touching supervisor_agent.py.
+# ------------------------------------------------------------------------------
+mcp_toggles:
+  linkedin_hiring_posts: false
+  ats_direct: true
+  ats_google_dork: true
+  linkedin_jobs: false
+  indeed: false
+  wellfound: false
+  glassdoor: false
+  ambitionbox: false
+
+# ------------------------------------------------------------------------------
+# Shared search terms / locations. A single canonical list is reused across
+# supervisor_agent.py and every per-source MCP's function-default parameters
+# (linkedin_job_scraper, indeed, wellfound, glassdoor, ambitionbox) — avoids
+# maintaining 6 near-identical copies of the same lists.
+# ------------------------------------------------------------------------------
+search:
+  master_search_queries:
+    - "Data Platform Engineer"
+    - "AI Platform Engineer"
+    - "Software Engineer"
+    - "AI Infrastructure Engineer"
+
+  master_locations:
+    - "India"
+    - "Bengaluru"
+    - "Remote"
+    - "Bangalore"
+    - "Hyderabad"
+    - "Pune"
+
+  # Superset of master_locations used by the per-source scraper MCPs (Indeed,
+  # Glassdoor, LinkedIn jobs, Wellfound, AmbitionBox) as their own function
+  # defaults, for standalone/manual invocation outside supervisor_agent.py
+  # (supervisor_agent.py always overrides with master_locations above).
+  default_locations:
+    - "India"
+    - "Remote"
+    - "Bengaluru"
+    - "Bangalore"
+    - "Hyderabad"
+    - "Pune"
+    - "Delhi"
+    - "Gurgaon"
+    - "Noida"
+    - "Gurugram"
+    - "Mumbai"
+    - "New Delhi"
+
+  india_location_keywords:
+    - "india"
+    - "bengaluru"
+    - "bangalore"
+    - "hyderabad"
+    - "pune"
+    - "delhi"
+    - "gurgaon"
+    - "noida"
+    - "gurugram"
+    - "mumbai"
+    - "new delhi"
+
+  # Natural-language role terms used by linkedin_hiring_posts_mcp — what
+  # hiring managers actually write in posts, not formal JD titles.
+  hiring_post_roles:
+    - "platform engineer"
+    - "AI engineer"
+    - "software engineer"
+    - "data engineer"
+
+# ------------------------------------------------------------------------------
+# Career Strategy Constraints — Agent Optimization Context, Section 6.
+# Hard reject constraints MUST override an APPLY decision. Preference
+# boost/downgrade lists are passed to the Application Strategy Agent LLM to
+# adjust priority tier only (never the underlying decision).
+# ------------------------------------------------------------------------------
+career_strategy_constraints:
+  excluded_companies:
+    - "o9 solutions"
+    - "o9solutions"
+    - "o9"                # current employer
+    - "tcs"
+    - "tata consultancy"
+    - "infosys"
+    - "wipro"
+    - "cognizant"
+    - "capgemini"
+    - "hcl"                # IT services/outsourcing
+
+  excluded_role_keywords:
+    - "forward deployed"
+    - "fde"
+    - "solutions engineer"
+    - "support engineer"
+    - "salesforce"
+    - "apex"
+    - "manager"
+    - "director"
+    - "vp"
+    - "presales"
+    - "sales engineer"
+    - "customer success"
+    - "pre-sales"
+    - "account executive"
+    - "ml engineer"
+    - "machine learning engineer"
+    - "data scientist"
+    - "research engineer"
+    - "research scientist"
+    - "full stack"
+    - "fullstack"
+    - "frontend"
+    - "front-end"
+    - "android"
+    - "ios"
+    - "mobile"
+    - "react"
+    - "angular"
+    - "hardware engineer"
+    - "embedded"
+    - "networking hardware"
+    - "datacenter operations"
+    - "business analyst"
+    - "data analyst"
+    - "analytics engineer"
+    - "bi engineer"
+    - "reporting analyst"
+
+  preferred_role_keywords:
+    - "software engineer"
+    - "applied ai"
+    - "platform engineer"
+    - "ai infrastructure"
+    - "backend engineer"
+    - "data engineer"
+
+  preference_boost_companies:
+    - "databricks"
+    - "confluent"
+    - "grafana"
+    - "elastic"
+    - "weaviate"
+    - "astronomer"
+    - "signoz"
+    - "anyscale"
+
+  preference_boost_keywords:
+    - "spark"
+    - "airflow"
+    - "delta lake"
+    - "kafka"
+    - "kubernetes"
+    - "langchain"
+    - "langgraph"
+    - "rag"
+    - "agentic ai"
+    - "agentic"
+
+  preference_downgrade_keywords:
+    - "terraform"
+    - "golang"
+    - "go (co-equal)"
+    - "3-5 years"
+
+  preference_downgrade_min_company_size: 10000  # large enterprises: slower hiring, less ownership
+
+# ------------------------------------------------------------------------------
+# ATS Direct target companies (Greenhouse/Lever/Ashby/Workable public APIs).
+# Single merged & de-duplicated list — previously split across ats_direct_mcp.py
+# (TARGET_COMPANIES) and company_specific_mcp.py (SPECIFIC_TARGET_COMPANIES),
+# which silently queried several companies (Airbyte, Grafana Labs, Astronomer,
+# Browserstack, Postman, Hasura, Weaviate) TWICE per run. company_specific_mcp.py
+# has been removed; ats_direct_mcp.py is now the sole ATS-direct source.
+# Test any new slug: curl https://boards-api.greenhouse.io/v1/boards/{slug}/jobs
+# ------------------------------------------------------------------------------
+ats_target_companies:
+  # ── Core Targets ──
+  - { name: "Stripe",       ats: "greenhouse", slug: "stripe" }
+  - { name: "Palantir",     ats: "lever",      slug: "palantir" }
+  - { name: "Scale AI",     ats: "greenhouse", slug: "scaleai" }
+  - { name: "Ramp",         ats: "ashby",      slug: "ramp" }
+  - { name: "Rippling",     ats: "greenhouse", slug: "rippling" }
+
+  # ── AI Infrastructure & Data Platform ──
+  - { name: "Databricks",   ats: "greenhouse", slug: "databricks" }
+  - { name: "Confluent",    ats: "ashby",      slug: "confluent" }
+  - { name: "Grafana Labs", ats: "greenhouse", slug: "grafana" }
+  - { name: "Elastic",      ats: "greenhouse", slug: "elastic" }
+  - { name: "Glean",        ats: "greenhouse", slug: "glean" }
+  - { name: "Weaviate",     ats: "ashby",      slug: "weaviate" }
+  - { name: "Qdrant",       ats: "ashby",      slug: "qdrant.tech" }
+  - { name: "LanceDB",      ats: "ashby",      slug: "lancedb" }
+  - { name: "Cohere",       ats: "greenhouse", slug: "cohere" }
+  - { name: "Together AI",  ats: "greenhouse", slug: "togetherai" }
+  - { name: "SigNoz",       ats: "ashby",      slug: "signoz" }
+  - { name: "Axiom",        ats: "ashby",      slug: "axiom" }
+
+  # ── Orchestration & Data Integration ──
+  - { name: "Astronomer",   ats: "greenhouse", slug: "astronomer" }
+  - { name: "Airbyte",      ats: "greenhouse", slug: "airbyte" }
+  - { name: "Fivetran",     ats: "greenhouse", slug: "fivetran" }
+  - { name: "Prefect",      ats: "greenhouse", slug: "prefect" }
+  - { name: "Dagster Labs", ats: "greenhouse", slug: "dagster-labs" }
+  - { name: "Meltano",      ats: "greenhouse", slug: "meltano" }
+  - { name: "Cube Dev",     ats: "greenhouse", slug: "cube-dev" }
+
+  # ── YC-backed / remote-first startups ──
+  - { name: "Retool",       ats: "greenhouse", slug: "retool" }
+  - { name: "Dbt Labs",     ats: "greenhouse", slug: "dbtlabs" }
+  - { name: "PostHog",      ats: "workable",   slug: "posthog" }
+  - { name: "Cal.com",      ats: "lever",      slug: "calcom" }
+
+  # ── Indian Product Companies ──
+  - { name: "Razorpay",     ats: "lever",      slug: "razorpay" }
+  - { name: "Freshworks",   ats: "greenhouse", slug: "freshworks" }
+  - { name: "Hasura",       ats: "workable",   slug: "hasura" }
+  - { name: "Appsmith",     ats: "lever",      slug: "appsmith" }
+  - { name: "Tooljet",      ats: "lever",      slug: "tooljet" }
+  - { name: "Browserstack", ats: "workable",   slug: "browserstack" }
+  - { name: "Postman",      ats: "workable",   slug: "postman" }
+  - { name: "Chargebee",    ats: "workable",   slug: "chargebee" }
+  - { name: "Clevertap",    ats: "workable",   slug: "clevertap" }
+
+  # ── Other Strong Targets ──
+  - { name: "Notion",       ats: "greenhouse", slug: "notion" }
+  - { name: "Linear",       ats: "ashby",      slug: "linear" }
+
+  # ── Global remote-first, NZ/AU/EU timezone friendly ──
+  - { name: "Xero",         ats: "greenhouse", slug: "xero" }
+  - { name: "Atlassian",    ats: "greenhouse", slug: "atlassian" }
+  - { name: "Canva",        ats: "greenhouse", slug: "canva" }
+  - { name: "Automattic",   ats: "greenhouse", slug: "automattic" }
+  - { name: "GitLab",       ats: "greenhouse", slug: "gitlab" }

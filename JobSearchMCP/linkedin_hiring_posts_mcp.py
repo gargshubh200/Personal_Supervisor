@@ -25,6 +25,8 @@ from apify_client import ApifyClient
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 
+from config_loader import get_hiring_post_roles
+
 load_dotenv()
 
 mcp = MCPServer("LinkedInHiringPostsServer")
@@ -105,13 +107,9 @@ CONTENT_CONFIRMATION_PATTERNS = {
 # NOT formal JD titles like "Forward Deployed Engineer".
 # Each role is queried individually (looped, not OR-combined) against each
 # hiring pattern — see search_hiring_manager_posts() below.
+# Sourced from config.yaml (search.hiring_post_roles) — edit that file to tune.
 
-DEFAULT_HIRING_POST_ROLES = [
-    "platform engineer",
-    "AI engineer",
-    "software engineer",
-    "data engineer",
-]
+DEFAULT_HIRING_POST_ROLES = get_hiring_post_roles()
 
 # Roles that are generic on their own (would surface plain non-AI platform/backend
 # roles). These get an "applied AI" qualifier ANDed in so we only surface postings

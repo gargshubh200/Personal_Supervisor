@@ -84,12 +84,16 @@ processed twice across runs.
 ```
 CandidateResumeDoc/        Drop your latest resume here — auto-detected each run
 master_profile.json        Your structured, verified work history (auto-generated)
+config.yaml                 All tunable setup data — toggles, search terms, locations,
+                             target companies, career strategy constraints (edit this,
+                             not the Python files, to change behavior)
+config_loader.py            Loads & caches config.yaml for every MCP/SubAgent
 supervisor_agent.py         The orchestrator — runs the steps above in order
 
 JobSearchMCP/               Where job leads come from
   linkedin_hiring_posts_mcp.py    LinkedIn hiring-manager post search
   linkedin_job_scraper_mcp.py     LinkedIn job listing search
-  ats_direct_mcp.py               Direct search of known companies' career pages
+  ats_direct_mcp.py               Direct search of known companies' career pages (Greenhouse/Lever/Ashby/Workable)
   ats_google_dork_mcp.py          Search-engine based discovery of ATS job pages
   indeed_scraper_mcp.py           Indeed job search
   wellfound_scraper_mcp.py        Wellfound (startup jobs) search
@@ -218,11 +222,13 @@ up and turned into `master_profile.json` automatically on the next run.
 
 ### 5. Pick which sources to search
 
-Open `supervisor_agent.py` and look for `MCP_TOGGLES` near the top — flip any
-source on/off, and adjust `MASTER_SEARCH_QUERIES` / `MASTER_LOCATIONS` to your
-target roles and locations. `CAREER_STRATEGY_CONSTRAINTS` in the same file is
-where you set your own dealbreakers (companies/roles to avoid) and preferences
-(what should bump a job to a higher priority).
+All tunable setup data — which sources run (`mcp_toggles`), your target roles
+and locations (`search.master_search_queries` / `search.master_locations`),
+your dealbreakers and preferences (`career_strategy_constraints`), and the
+list of companies `ats_direct_mcp.py` checks directly (`ats_target_companies`)
+— lives in **`config.yaml`** at the repo root. Open it and edit the plain
+YAML lists/dicts; no Python code changes needed. Regexes and LLM prompts stay
+in the source files since they're engineering logic, not user-tunable setup.
 
 ### 6. Run it
 

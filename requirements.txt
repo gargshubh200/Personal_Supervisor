@@ -11,3 +11,4 @@ google-auth-oauthlib
 requests
 pydantic
 google-cloud-firestore
+pyyaml

@@ -22,6 +22,8 @@ from dotenv import load_dotenv
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 
+from config_loader import get_ats_target_companies
+
 load_dotenv()
 
 mcp = MCPServer("ATSDirectServer")
@@ -69,35 +71,13 @@ EXPERIENCE_YEAR_REJECT_REGEX = re.compile(
 # Test any new slug: curl https://boards-api.greenhouse.io/v1/boards/{slug}/jobs
 # If 404 — slug is wrong. Common variations: company-inc, companyai, company-labs
 
-TARGET_COMPANIES = [
-    # ── Core Targets ──
-    {"name": "Stripe",          "ats": "greenhouse", "slug": "stripe"},
-    {"name": "Palantir",        "ats": "lever",      "slug": "palantir"},
-    {"name": "Scale AI",        "ats": "greenhouse", "slug": "scaleai"},
-    {"name": "Ramp",            "ats": "ashby",      "slug": "ramp"},
-    {"name": "Rippling",        "ats": "greenhouse", "slug": "rippling"},
+# ── TARGET COMPANIES ──────────────────────────────────────────────────────────
+# ATS slugs verified against public API endpoints. Full list lives in
+# config.yaml (ats_target_companies) — edit that file to add/remove companies.
+# Test any new slug: curl https://boards-api.greenhouse.io/v1/boards/{slug}/jobs
+# If 404 — slug is wrong. Common variations: company-inc, companyai, company-labs
 
-    # ── AI Infrastructure & Data Platform ──
-    {"name": "Databricks",      "ats": "greenhouse", "slug": "databricks"},
-    {"name": "Confluent",       "ats": "greenhouse", "slug": "confluent"},
-    {"name": "Grafana Labs",    "ats": "greenhouse", "slug": "grafana"},
-    {"name": "Elastic",         "ats": "greenhouse", "slug": "elastic"},
-    {"name": "Glean",           "ats": "greenhouse", "slug": "glean"},
-    {"name": "Weaviate",        "ats": "ashby",      "slug": "weaviate"},
-
-    # ── Orchestration & Data Integration ──
-    {"name": "Astronomer",      "ats": "greenhouse", "slug": "astronomer"},
-    {"name": "Airbyte",         "ats": "greenhouse", "slug": "airbyte"},
-    {"name": "Fivetran",        "ats": "greenhouse", "slug": "fivetran"},
-
-    # ── Indian Product Companies ──
-    {"name": "Razorpay",        "ats": "lever",      "slug": "razorpay"},
-    {"name": "Freshworks",      "ats": "greenhouse", "slug": "freshworks"},
-
-    # ── Other Strong Targets ──
-    {"name": "Notion",          "ats": "greenhouse", "slug": "notion"},
-    {"name": "Linear",          "ats": "ashby",      "slug": "linear"},
-]
+TARGET_COMPANIES = get_ats_target_companies()
 
 # ── COMPANY-LEVEL TITLE OVERRIDES ─────────────────────────────────────────────
 # Some companies use role titles not caught by TARGET_TITLE_REGEX.
@@ -253,28 +233,55 @@ def fetch_ashby_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
 
     return results
 
+def fetch_workable_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
+    url = f"https://{comp['slug']}.workable.com/api/v3/jobs"
+    res = requests.get(url, timeout=10).json()
+    results = []
+
+    for item in res.get("jobs", []):
+        if len(results) >= per_company_limit:
+            break
+        title = item.get("title", "").strip()
+        # Workable provides full_description in the list endpoint
+        clean_jd = item.get("full_description", "") or item.get("description", "")
+        clean_jd = clean_html(clean_jd)
+
+        if passes_title_filter(title, comp["name"]) and passes_yoe_filter(clean_jd):
+            results.append({
+                "platform": f"Direct ATS ({comp['name']})",
+                "company": comp["name"],
+                "role": title,
+                "url": item.get("url", ""),
+                "location": item.get("location", {}).get("city", "Remote"),
+                "jd_text": clean_jd[:4000]
+            })
+
+    return results
+
 
 # ── MAIN TOOL ─────────────────────────────────────────────────────────────────
+ATS_FETCHERS = {
+        "greenhouse": fetch_greenhouse_jobs,
+        "lever":      fetch_lever_jobs,
+        "ashby":      fetch_ashby_jobs,
+        "workable":   fetch_workable_jobs
+    }
 
 @observe(name="ATS Direct MCP: Fetch Public API Jobs")
 @mcp.tool()
-def fetch_ats_direct_jobs(per_company_limit: int = 5) -> List[Dict[str, Any]]:
+def fetch_ats_direct_jobs(per_company_limit: int = 3) -> List[Dict[str, Any]]:
     """
-    Fetches live engineering jobs directly from company ATS APIs (Greenhouse, Lever, Ashby).
+    Fetches live engineering jobs directly from company ATS APIs (Greenhouse, Lever, Ashby, Workable).
     Zero proxy cost. Applies per-company limits to ensure all companies are sampled.
 
     Args:
-        per_company_limit: Max jobs to return per company (default 5).
+        per_company_limit: Max jobs to return per company (default 3, since
+                           TARGET_COMPANIES now covers ~40 companies after
+                           merging in the former company_specific_mcp.py list).
                            Total max = per_company_limit * len(TARGET_COMPANIES).
     """
     all_jobs = []
     fetch_errors = []
-
-    ATS_FETCHERS = {
-        "greenhouse": fetch_greenhouse_jobs,
-        "lever":      fetch_lever_jobs,
-        "ashby":      fetch_ashby_jobs,
-    }
 
     for comp in TARGET_COMPANIES:
         try:
