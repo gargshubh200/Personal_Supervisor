@@ -21,6 +21,7 @@ from typing import Dict, Any, List
 from dotenv import load_dotenv
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from config_loader import get_ats_target_companies
 
@@ -147,10 +148,24 @@ def passes_yoe_filter(jd_text: str) -> bool:
     return True
 
 
+# A single transient network hiccup (read timeout, connection reset) with any
+# one ATS vendor shouldn't permanently drop that company for the whole run —
+# retry briefly before giving up and letting the caller's try/except skip it.
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=6),
+    retry=retry_if_exception_type((requests.exceptions.Timeout, requests.exceptions.ConnectionError)),
+    reraise=True
+)
+def _get_json_with_retry(url: str, timeout: int = 10):
+    """GETs a URL and returns parsed JSON, retrying up to 3x on timeout/connection errors."""
+    return requests.get(url, timeout=timeout).json()
+
+
 def fetch_greenhouse_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
     """Fetches jobs from Greenhouse ATS API."""
     url = f"https://boards-api.greenhouse.io/v1/boards/{comp['slug']}/jobs?content=true"
-    res = requests.get(url, timeout=10).json()
+    res = _get_json_with_retry(url)
     results = []
 
     for item in res.get("jobs", []):
@@ -175,7 +190,7 @@ def fetch_greenhouse_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
 def fetch_lever_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
     """Fetches jobs from Lever ATS API."""
     url = f"https://api.lever.co/v0/postings/{comp['slug']}?mode=json"
-    res = requests.get(url, timeout=10).json()
+    res = _get_json_with_retry(url)
     results = []
 
     for item in (res if isinstance(res, list) else []):
@@ -201,7 +216,7 @@ def fetch_lever_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
 def fetch_ashby_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
     """Fetches jobs from Ashby ATS API."""
     url = f"https://api.ashbyhq.com/posting-api/job-board/{comp['slug']}"
-    res = requests.get(url, timeout=10).json()
+    res = _get_json_with_retry(url)
     results = []
 
     for item in res.get("jobs", []):
@@ -235,7 +250,7 @@ def fetch_ashby_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
 
 def fetch_workable_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
     url = f"https://{comp['slug']}.workable.com/api/v3/jobs"
-    res = requests.get(url, timeout=10).json()
+    res = _get_json_with_retry(url)
     results = []
 
     for item in res.get("jobs", []):
