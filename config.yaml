@@ -14,15 +14,17 @@
 # ------------------------------------------------------------------------------
 # Which job-source MCPs run on each supervisor_agent.py pass. Flip to true/false
 # to enable/disable a source without touching supervisor_agent.py.
+# ambitionbox is disabled by default because the actor is still under-developed
+# and is resource hungry
 # ------------------------------------------------------------------------------
 mcp_toggles:
-  linkedin_hiring_posts: false
+  linkedin_hiring_posts: true
   ats_direct: true
   ats_google_dork: true
-  linkedin_jobs: false
-  indeed: false
-  wellfound: false
-  glassdoor: false
+  linkedin_jobs: true
+  indeed: true
+  wellfound: true
+  glassdoor: true
   ambitionbox: false
 
 # ------------------------------------------------------------------------------

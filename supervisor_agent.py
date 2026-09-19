@@ -63,17 +63,17 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     # --------------------------------------------------------------------------
     # STEP 0: REFRESH MASTER PROFILE FROM LATEST RESUME (if one is present)
     # --------------------------------------------------------------------------
-    # print("\n📄 STEP 0: Checking CandidateResumeDoc/ for an updated resume...")
-    # try:
-    #     resume_path = find_latest_resume_in_candidate_folder()
-    #     if resume_path:
-    #         print(f"🧠 Found resume '{resume_path.name}' — regenerating master_profile.json...")
-    #         generate_master_profile(str(resume_path))
-    #         print("✅ STEP 0 COMPLETE: master_profile.json refreshed from latest resume.")
-    #     else:
-    #         print("ℹ️  No resume found in CandidateResumeDoc/. Using existing master_profile.json as-is.")
-    # except Exception as e:
-    #     print(f"⚠️ Warning during master profile regeneration: {str(e)}. Proceeding with existing master_profile.json.")
+    print("\n📄 STEP 0: Checking CandidateResumeDoc/ for an updated resume...")
+    try:
+        resume_path = find_latest_resume_in_candidate_folder()
+        if resume_path:
+            print(f"🧠 Found resume '{resume_path.name}' — regenerating master_profile.json...")
+            generate_master_profile(str(resume_path))
+            print("✅ STEP 0 COMPLETE: master_profile.json refreshed from latest resume.")
+        else:
+            print("ℹ️  No resume found in CandidateResumeDoc/. Using existing master_profile.json as-is.")
+    except Exception as e:
+        print(f"⚠️ Warning during master profile regeneration: {str(e)}. Proceeding with existing master_profile.json.")
 
     # --------------------------------------------------------------------------
     # STEP 1: INDEPENDENT LINKEDIN HIRING MANAGER DISCOVERY
@@ -165,7 +165,6 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
         all_jobs.append(j)
 
     print(f"✅ Deduplication Summary: {len(all_jobs)} new DISCOVERED job leads retained.")
-    return
 
     # --------------------------------------------------------------------------
     # STEP 3: MULTI-AGENT PROCESSING & STATE TRANSITION PIPELINE
