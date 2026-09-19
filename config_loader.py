@@ -64,3 +64,7 @@ def get_career_strategy_constraints() -> Dict[str, Any]:
 
 def get_ats_target_companies() -> List[Dict[str, str]]:
     return load_config()["ats_target_companies"]
+
+
+def get_no_public_ats_companies() -> List[Dict[str, str]]:
+    return load_config()["no_public_ats_companies"]

@@ -107,7 +107,6 @@ career_strategy_constraints:
   excluded_role_keywords:
     - "forward deployed"
     - "fde"
-    - "solutions engineer"
     - "support engineer"
     - "salesforce"
     - "apex"
@@ -248,3 +247,51 @@ ats_target_companies:
   - { name: "Canva",        ats: "greenhouse", slug: "canva" }
   - { name: "Automattic",   ats: "greenhouse", slug: "automattic" }
   - { name: "GitLab",       ats: "greenhouse", slug: "gitlab" }
+
+  # ── Remote-first companies from "50 Remote Companies Hiring in India" sheet ──
+  - { name: "Remote.com",   ats: "greenhouse", slug: "remote" }
+  - { name: "Turing",       ats: "greenhouse", slug: "turing" }
+  - { name: "Toptal",       ats: "lever",      slug: "toptal" }
+  - { name: "Twilio",       ats: "greenhouse", slug: "twilio" }
+  - { name: "Dropbox",      ats: "greenhouse", slug: "dropbox" }
+  - { name: "Bitwarden",    ats: "greenhouse", slug: "bitwarden" }
+  - { name: "Customer.io",  ats: "greenhouse", slug: "customerio" }
+  - { name: "Canonical",    ats: "greenhouse", slug: "canonical" }
+  - { name: "Mozilla",      ats: "greenhouse", slug: "mozilla" }
+  - { name: "Zapier",       ats: "ashby",      slug: "zapier" }
+  - { name: "Kit",          ats: "ashby",      slug: "kit" }
+  - { name: "Close",        ats: "ashby",      slug: "close" }
+  - { name: "Supabase",     ats: "ashby",      slug: "supabase" }
+  - { name: "RevenueCat",   ats: "ashby",      slug: "revenuecat" }
+  - { name: "Atlan",        ats: "ashby",      slug: "atlan" }
+  - { name: "Andela",       ats: "ashby",      slug: "andela" }
+  - { name: "Deel",         ats: "ashby",      slug: "deel" }
+
+# ------------------------------------------------------------------------------
+# Companies from the "50 Remote Companies Hiring in India" sheet confirmed to
+# NOT run a supported public ATS API (Greenhouse/Lever/Ashby/Workable/
+# SmartRecruiters were all checked). They're on Workday, BambooHR, Teamtailor,
+# or a fully custom in-house careers portal instead — see the architecture
+# note at the top of ats_google_dork_mcp.py for why we don't build a dedicated
+# scraper for these. Covered opportunistically instead via company-scoped
+# Google Dork queries (generated from this list, not hand-written per company).
+# ------------------------------------------------------------------------------
+no_public_ats_companies:
+  - { name: "Buffer",              domain: "buffer.com" }
+  - { name: "Doist",               domain: "doist.com" }
+  - { name: "Help Scout",          domain: "helpscout.com" }
+  - { name: "Camunda",             domain: "camunda.com" }
+  - { name: "Trail of Bits",       domain: "trailofbits.com" }
+  - { name: "Hashnode",            domain: "hashnode.com" }
+  - { name: "Whatfix",             domain: "whatfix.com" }
+  - { name: "Darwinbox",           domain: "darwinbox.com" }
+  - { name: "Innovaccer",          domain: "innovaccer.com" }
+  - { name: "Rocketlane",          domain: "rocketlane.com" }
+  - { name: "SafetyWing",          domain: "safetywing.com" }
+  - { name: "Redis",               domain: "redis.io" }
+  - { name: "Zoho",                domain: "zoho.com" }
+  - { name: "Springworks",         domain: "springworks.in" }
+  - { name: "Uplers",              domain: "uplers.com" }
+  - { name: "Recruit CRM",         domain: "recruitcrm.io" }
+  - { name: "MailerLite",          domain: "mailerlite.com" }
+  - { name: "Wikimedia Foundation", domain: "wikimediafoundation.org" }

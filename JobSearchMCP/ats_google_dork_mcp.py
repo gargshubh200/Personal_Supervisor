@@ -3,6 +3,23 @@ JobSearchMCP/ats_google_dork_mcp.py
 
 Combines Serper (Google Dorking) for fast ATS URL discovery with Tavily (/extract)
 for full-text, clean Markdown job description parsing.
+
+── ARCHITECTURE NOTE: why this MCP also covers "no public ATS API" companies ──
+Some remote-first companies worth tracking (see config.yaml's
+`no_public_ats_companies`) don't run Greenhouse/Lever/Ashby/Workable — they're
+on Workday, BambooHR, Teamtailor, or a fully custom in-house careers portal.
+None of those expose a free, stable, unauthenticated JSON API the way the 4
+ATS vendors above do (each Workday tenant has a different URL scheme and often
+needs session cookies; BambooHR/Teamtailor postings are rendered client-side).
+Building/maintaining a dedicated scraper per platform for a short, fixed list
+of ~18 companies — several of which rarely post roles matching this
+candidate's target domains — has a poor effort-to-lead ratio and a high
+breakage rate (scrapers silently rot whenever any one of these portals
+redesigns). Instead, this module opportunistically discovers postings from
+those companies via ordinary Google Dorking against their own domain
+(`site:{domain}`) — same mechanism as the ATS-domain dorks below, reusing the
+exact same Serper + Tavily pipeline and title/YOE filters, at zero additional
+maintenance cost. See COMPANY_SCOPED_DORK_QUERIES.
 """
 
 import os
@@ -12,6 +29,8 @@ from typing import Dict, Any, List
 from dotenv import load_dotenv
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
+
+from config_loader import get_no_public_ats_companies
 
 load_dotenv()
 
@@ -76,8 +95,15 @@ def passes_tier2_yoe_filter(jd_text: str) -> bool:
     return True
 
 
+NO_PUBLIC_ATS_COMPANIES = get_no_public_ats_companies()
+# Domain -> name lookup so company-scoped dork results are labeled correctly
+# instead of falling through to the generic "Tech Company" fallback.
+DOMAIN_TO_COMPANY_NAME = {c["domain"]: c["name"] for c in NO_PUBLIC_ATS_COMPANIES}
+
+
 def extract_company_from_url(url: str) -> str:
-    """Extracts a clean company name from standard ATS URL paths."""
+    """Extracts a clean company name from standard ATS URL paths, or from a
+    known no-public-ATS company domain (config.yaml: no_public_ats_companies)."""
     try:
         if "greenhouse.io/" in url:
             parts = url.split("greenhouse.io/")[1].split("/")
@@ -88,6 +114,10 @@ def extract_company_from_url(url: str) -> str:
         elif "ashbyhq.com/" in url:
             parts = url.split("ashbyhq.com/")[1].split("/")
             return parts[0].replace("-", " ").title()
+
+        for domain, name in DOMAIN_TO_COMPANY_NAME.items():
+            if domain in url:
+                return name
     except Exception:
         pass
     return "Tech Company"
@@ -136,6 +166,19 @@ DORK_QUERIES = [
     'site:jobs.lever.co "AI infrastructure" OR "ai backend" engineer python "2" OR "3" years',
     'site:boards.greenhouse.io "data engineer" "airflow" OR "spark" OR "delta lake" "2" OR "3" years',
 ]
+
+# ── COMPANY-SCOPED DORK QUERIES (no public ATS API) ───────────────────────────
+# Generated from config.yaml's no_public_ats_companies list — one query per
+# company, scoped to that company's own domain instead of a shared ATS domain.
+# See the architecture note at the top of this file for why these companies
+# are covered this way instead of via a dedicated per-platform scraper.
+COMPANY_SCOPED_DORK_QUERIES = [
+    f'site:{c["domain"]} careers "platform engineer" OR "software engineer" OR '
+    f'"backend engineer" OR "data engineer" OR "applied ai"'
+    for c in NO_PUBLIC_ATS_COMPANIES
+]
+
+DORK_QUERIES = DORK_QUERIES + COMPANY_SCOPED_DORK_QUERIES
 
 
 @observe(name="ATS Google Dork MCP: Discover & Extract Jobs")

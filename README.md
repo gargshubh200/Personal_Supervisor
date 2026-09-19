@@ -11,6 +11,94 @@ everything and gets out of your way, it doesn't submit anything on its own.
 
 ---
 
+## Disclaimer
+
+This is a personal project, published as-is for reference. A few things to
+keep in mind before you clone it:
+
+1. **Everything here is tuned for my own job search.** The project plan,
+   folder structure, LLM system prompts, MCP tool logic, and `config.yaml`
+   (search roles, target companies, locations, dealbreakers/preferences) all
+   reflect my specific role targets, experience, and constraints — not a
+   generic template. The codebase is small and clearly organized on purpose:
+   if you want to point this at a different role, seniority level, or
+   geography, feeding the repo to an LLM coding assistant and asking it to
+   retarget `config.yaml` (and, if needed, the prompts in `SubAgents/`) is a
+   quick, reliable way to adapt it. It was not built to be a plug-and-play
+   product for arbitrary job searches out of the box.
+
+2. **Gemini is the only LLM this project has been built and tested against.**
+   I built this end-to-end on Google's Agent Development Kit (ADK), and
+   Gemini has worked well for every task here — structured JD parsing, match
+   scoring, resume/cover-letter generation, and outreach drafting. Nothing
+   about the architecture requires Gemini specifically: ADK supports other
+   model providers, but swapping one in would need some code-level changes
+   (client setup, response-schema handling, occasional prompt tuning) rather
+   than a config flip. As with the customization point above, an LLM coding
+   assistant can carry out that kind of provider swap quickly — it just isn't
+   done here since Gemini already meets my needs.
+
+3. **This automates preparation, not submission.** It drafts resumes, cover
+   letters, and outreach messages — it never submits an application or sends
+   a message on your behalf. Every generated claim is checked against your
+   own `master_profile.json` (see "A note on trust" below), but you are still
+   responsible for reviewing anything before it goes out under your name.
+
+4. **You are responsible for how you use third-party data and services.**
+   This project scrapes public job boards, LinkedIn posts, and company career
+   pages via Apify actors, Serper, and Tavily, and sends data to Google's
+   Gemini API. Review each platform's terms of service and robots.txt/rate
+   limits for your own use, keep your API keys and `.env` private, and be
+   mindful of how much load you put on any single source — the built-in
+   toggles, rate-limit delays, and per-source limits exist specifically to
+   keep usage reasonable, not to guarantee compliance on your behalf.
+
+5. **No warranty, no guaranteed outcomes.** This is shared for learning and
+   reuse, not as a maintained product. It comes with no guarantee of
+   continued compatibility with Apify actors, LinkedIn/job-board structure
+   changes, or any LLM provider's API — all of these can and do change
+   without notice, and you may need to patch scrapers/prompts accordingly.
+
+6. **Some companies are intentionally not covered by a dedicated scraper.**
+   `ats_direct_mcp.py` only queries companies whose careers page is powered by
+   Greenhouse, Lever, Ashby, or Workable — each of these exposes a free,
+   stable, unauthenticated JSON API, which is what makes fast, low-maintenance
+   direct fetching possible. A number of well-known remote-first companies
+   (see `no_public_ats_companies` in `config.yaml`) run on Workday, BambooHR,
+   Teamtailor, SmartRecruiters, or a fully custom in-house portal instead —
+   platforms that don't expose an equivalent public API (Workday's URL scheme
+   differs per tenant and often needs session cookies; BambooHR/Teamtailor
+   render postings client-side). Building and maintaining a bespoke scraper
+   per platform for a short, fixed list of companies — several of which post
+   roles matching this candidate's target domains only rarely — has a poor
+   effort-to-lead ratio and a high breakage rate every time one of those
+   portals redesigns. Instead, those companies are covered opportunistically
+   through ordinary Google-Dork queries scoped to their own domain (see the
+   architecture note at the top of `ats_google_dork_mcp.py`), reusing the same
+   Serper/Tavily pipeline already in place rather than adding new fetcher
+   code. If you fork this for a company that's since added a supported ATS,
+   just move it into `ats_target_companies` in `config.yaml`.
+
+7. **The MCPs here are personal integration scripts, not standalone MCP
+   servers meant to be packaged/deployed on their own (e.g. as a Docker
+   image others `docker pull` and run).** They're called "MCP" because
+   they're written against the Model Context Protocol server interface for
+   consistency and easy tool-calling from the agents in this repo — but each
+   one is a thin, purpose-built wrapper around someone else's existing
+   service: Apify actors (for LinkedIn/Indeed/Glassdoor/Wellfound/AmbitionBox
+   scraping), Serper/Tavily (for search & extraction), and the ATS vendors'
+   own public job-board APIs (Greenhouse/Lever/Ashby/Workable). There would be
+   nothing authentic about re-packaging those into a standalone "product" —
+   the value here is the custom orchestration, filtering, and decision logic
+   built *on top of* those services for this specific job search, not the
+   underlying scraping/search capability itself, which isn't ours to
+   re-distribute as an independent offering. None of this is intended to
+   duplicate, circumvent, or resell any third-party's service — it's a
+   personal automation that happens to call several existing platforms via
+   their intended, documented APIs.
+
+---
+
 ## Why this exists
 
 Job hunting is mostly repetitive busywork: searching the same boards every day,
