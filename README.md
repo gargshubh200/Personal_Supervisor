@@ -333,6 +333,51 @@ docker run --env-file .env personal-supervisor
 
 ---
 
+### 7. Deploying to Google Cloud Run
+
+```
+# Git Bash / WSL / Linux / macOS terminal
+chmod +x deploy_gcp.sh
+./deploy_gcp.sh
+```
+
+```
+# IDE Terminal
+# Set the  terminal to Git Bash
+./deploy_gcp.sh
+```
+
+```
+# Run
+gcloud run jobs execute career-os-supervisor-job --region asia-south1
+```
+
+---
+
+### 8. Schedule the Gcloud Run job
+
+```
+# Schedule
+PROJECT_ID="" # your GCP project ID
+REGION="asia-south1"
+JOB_NAME="career-os-supervisor-job"
+SCHEDULER_NAME="career-os-supervisor-daily-trigger"
+TIME_ZONE="" # e.g., America/New_York, UTC, Asia/Kolkata
+
+PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')
+SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+gcloud scheduler jobs create http "${SCHEDULER_NAME}" \
+    --location="${REGION}" \
+    --schedule="0 8 * * *" \ # this is set for 8 AM daily; adjust as needed
+    --time-zone="${TIME_ZONE}" \
+    --uri="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_ID}/jobs/${JOB_NAME}:run" \
+    --http-method="POST" \
+    --oauth-service-account-email="${SERVICE_ACCOUNT}"
+```
+
+---
+
 ## A note on trust
 
 Every generated resume bullet, cover letter claim, and outreach message is
