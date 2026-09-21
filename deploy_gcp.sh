@@ -106,7 +106,8 @@ gcloud services enable \
     cloudscheduler.googleapis.com \
     aiplatform.googleapis.com \
     firestore.googleapis.com \
-    drive.googleapis.com
+    drive.googleapis.com \
+    storage.googleapis.com
 
 # ── Step 2.5: Grant IAM Permissions to Service Account ─────────────────────
 info "2.5. Granting required IAM permissions to Compute Service Account..."
@@ -118,6 +119,7 @@ ROLES=(
   "roles/aiplatform.user"
   "roles/secretmanager.secretAccessor"
   "roles/run.invoker"
+  "roles/storage.objectUser"
 )
 
 for ROLE in "${ROLES[@]}"; do
@@ -141,6 +143,22 @@ else
   info "   Repository already exists — skipping creation."
 fi
 
+# ── Step 3.5: Ensure GCS Bucket & Subfolders Exist ───────────────────────────
+BUCKET_NAME="career-os-resumes-bucket"
+info "3.5. Ensuring GCS bucket and folder prefixes exist..."
+
+if ! gcloud storage buckets describe "gs://${BUCKET_NAME}" &>/dev/null; then
+  info "   Creating bucket gs://${BUCKET_NAME}..."
+  gcloud storage buckets create "gs://${BUCKET_NAME}" --location="${REGION}" --quiet
+else
+  info "   Bucket gs://${BUCKET_NAME} already exists — skipping creation."
+fi
+
+# In GCS, virtual folders are initialized by placing a placeholder file inside the prefix
+info "   Creating 'base_resume/' and 'output_resumes/' folder prefixes..."
+echo "" | gcloud storage cp - "gs://${BUCKET_NAME}/base_resume/.keep" --quiet
+echo "" | gcloud storage cp - "gs://${BUCKET_NAME}/output_resumes/.keep" --quiet
+
 # ── Step 4: Configure Docker auth for Artifact Registry ──────────────────────
 info "4. Configuring Docker authentication..."
 gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
@@ -153,19 +171,23 @@ gcloud builds submit --tag "${IMAGE_NAME}" .
 info "6. Deploying Cloud Run Job: ${JOB_NAME}..."
 
 DEPLOY_CMD=(
-  gcloud run jobs deploy "${JOB_NAME}"
+  gcloud.cmd run jobs deploy "${JOB_NAME}"
   --image "${IMAGE_NAME}"
   --region "${REGION}"
   --tasks 1
   --max-retries 0
   --task-timeout 2h
+  --add-volume name=resume-storage,type=cloud-storage,bucket=career-os-resumes-bucket
+  --add-volume-mount volume=resume-storage,mount-path=/app/OtherMCP/gcs_storage
+  --cpu 2          # Allocates 2 vCPUs (or 4)
+  --memory 2Gi     # Allocates 2 GiB RAM (options: 1Gi, 2Gi, 4Gi, 8Gi)
 )
 
 if [[ -n "$ENV_YAML" && -f "$ENV_YAML" ]]; then
   DEPLOY_CMD+=(--env-vars-file "${ENV_YAML}")
 fi
 
-"${DEPLOY_CMD[@]}"
+MSYS_NO_PATHCONV=1 "${DEPLOY_CMD[@]}"
 
 echo ""
 info "✅ Deployment completed! Job: ${JOB_NAME} | Region: ${REGION}"

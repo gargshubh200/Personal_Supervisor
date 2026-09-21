@@ -25,12 +25,11 @@ client = genai.Client(
     project="career-os-project",
     location="global"
 )
-# Single-pass structured extraction (response_schema) -> client.models.generate_content().
-# This is not a multi-turn/tool-calling agent loop, so automatic function calling (which
-# Google recommends only via Chat.send_message) is not a concern here.
+
 REPO_ROOT = Path(__file__).parent.parent
 OUTPUT_PROFILE_PATH = REPO_ROOT / "master_profile.json"
 CANDIDATE_RESUME_DIR = REPO_ROOT / "CandidateResumeDoc"
+MOUNTED_BASE_RESUME_DIR = REPO_ROOT / "OtherMCP" / "gcs_storage" / "base_resume"
 
 
 # ------------------------------------------------------------------
@@ -121,15 +120,21 @@ class MasterProfileSchema(BaseModel):
 def find_latest_resume_in_candidate_folder(folder: Path = CANDIDATE_RESUME_DIR) -> Optional[Path]:
     """
     Locates the most recently modified supported resume file (.docx/.pdf) inside
-    the CandidateResumeDoc folder. Returns None if the folder doesn't exist or is empty.
+    either CANDIDATE_RESUME_DIR or the mounted GCS base_resume directory.
     """
-    if not folder.exists():
-        return None
+    search_dirs = [folder, MOUNTED_BASE_RESUME_DIR]
+    candidates = []
 
-    candidates = [
-        f for f in folder.iterdir()
-        if f.is_file() and f.suffix.lower() in (".docx", ".pdf") and not f.name.startswith("~$")
-    ]
+    for d in search_dirs:
+        if d.exists():
+            candidates.extend([
+                f for f in d.iterdir()
+                if f.is_file()
+                and f.suffix.lower() in (".docx", ".pdf")
+                and not f.name.startswith("~$")
+                and f.name != ".keep"
+            ])
+
     if not candidates:
         return None
 
@@ -219,4 +224,4 @@ if __name__ == "__main__":
             generate_master_profile(str(auto_resume))
         else:
             print("Usage: python generate_master_profile.py <path_to_resume.pdf_or_.docx>")
-            print(f"(No resume found in {CANDIDATE_RESUME_DIR} either.)")
+            print(f"(No resume found in {CANDIDATE_RESUME_DIR} or GCS base_resume/ folder.)")

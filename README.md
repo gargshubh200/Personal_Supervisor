@@ -276,6 +276,7 @@ Copy your own values into a `.env` file in the project root:
 
 ```env
 # Google Drive & Email
+GCS_RESUME_BUCKET=career-os-resumes-bucket
 GOOGLE_DRIVE_FOLDER_ID=your_drive_folder_id
 SENDER_EMAIL=you@gmail.com
 SENDER_APP_PASSWORD=your_gmail_app_password
@@ -375,6 +376,13 @@ gcloud scheduler jobs create http "${SCHEDULER_NAME}" \
     --http-method="POST" \
     --oauth-service-account-email="${SERVICE_ACCOUNT}"
 ```
+
+---
+
+### 9. Updating your resume in the gcs bucket
+
+A gcs bucket `career-os-resumes-bucket` is used to upload the candidate resume & for persisting the output resumes. \
+User can upload the updated resume (doc/pdf, any file name) in the base_resume folder within the bucket 
 
 ---
 

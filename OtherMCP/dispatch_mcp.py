@@ -17,14 +17,15 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+import google.auth
 
 mcp = MCPServer("DispatchServer")
 load_dotenv()
 
-OUTPUT_DIR = Path(__file__).parent / "output_resumes"
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = Path(__file__).parent / "gcs_storage" / "output_resumes"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
 def _load_profile() -> Dict[str, Any]:
@@ -63,10 +64,16 @@ def _get_drive_service():
     token_path = Path(__file__).parent / "token.json"
     credentials_path = Path(__file__).parent / "credentials.json"
 
+    # 1. Try local service account file if present
     if os.path.exists(service_account_path):
-        creds = service_account.Credentials.from_service_account_file(
-            service_account_path, scopes=DRIVE_SCOPES
-        )
+        try:
+            creds = service_account.Credentials.from_service_account_file(
+                service_account_path, scopes=DRIVE_SCOPES
+            )
+        except Exception as e:
+            print(f"⚠️ Service account file auth failed: {e}")
+
+    # 2. Try local user tokens (OAuth)
     elif token_path.exists():
         try:
             creds = Credentials.from_authorized_user_file(str(token_path), DRIVE_SCOPES)
@@ -75,7 +82,7 @@ def _get_drive_service():
                 with open(token_path, "w", encoding="utf-8") as token_file:
                     token_file.write(creds.to_json())
         except Exception as e:
-            print(f"⚠️ Error loading/refreshing token.json: {str(e)}")
+            print(f"⚠️ Token auth failed: {e}")
             creds = None
 
     elif credentials_path.exists():
@@ -85,11 +92,17 @@ def _get_drive_service():
             with open(token_path, "w", encoding="utf-8") as token_file:
                 token_file.write(creds.to_json())
         except Exception as e:
-            print(f"⚠️ Error authenticating via credentials.json: {str(e)}")
+            print(f"⚠️ Credentials auth failed: {e}")
             creds = None
 
+    # 3. Fallback to Cloud Run / GCP Application Default Credentials (ADC)
     if not creds:
-        return None
+        try:
+            creds, _ = google.auth.default(scopes=DRIVE_SCOPES)
+            print("🔐 Authenticated with GCP Application Default Credentials.")
+        except Exception as e:
+            print(f"⚠️ ADC authentication failed: {str(e)}")
+            return None
 
     return build("drive", "v3", credentials=creds)
 

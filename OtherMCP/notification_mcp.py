@@ -30,11 +30,13 @@ def send_executive_briefing(summary_data: dict) -> bool:
             <tr style="background-color: #f2f2f2;">
                 <th style="padding: 10px; border: 1px solid #ddd;">Job Applications Processed</th>
                 <th style="padding: 10px; border: 1px solid #ddd; color: #2e7d32;">HIGH Priority</th>
+                <th style="padding: 10px; border: 1px solid #ddd; color: #f57c00;">MEDIUM Priority</th>
                 <th style="padding: 10px; border: 1px solid #ddd; color: #1a73e8;">Hiring Manager DMs Drafted</th>
             </tr>
             <tr>
                 <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">{len(job_records)}</td>
                 <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{len(high_priority)}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{len(medium_priority)}</td>
                 <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">{len(hiring_leads)}</td>
             </tr>
         </table>
@@ -71,6 +73,21 @@ def send_executive_briefing(summary_data: dict) -> bool:
             </div>
             """
 
+    # --- SECTION 3: MEDIUM PRIORITY APPLICATION ARTIFACTS ---
+    if medium_priority:
+        html_content += """<h3 style="color: #f57c00;">⚡ Medium-Priority Application Artifacts</h3>"""
+        for item in medium_priority:
+            html_content += f"""
+            <div style="background: #fffbe6; padding: 15px; border-left: 4px solid #f57c00; margin-bottom: 15px;">
+                <h4 style="margin: 0 0 5px 0;">{item['title']} @ <strong>{item['company']}</strong> ({item['location']})</h4>
+                <p style="margin: 0 0 10px 0;"><strong>Match Score:</strong> {item['match_score']}% | <strong>Priority:</strong> {item['strategy']}</p>
+                <p style="margin: 0 0 5px 0;"><strong>Generated Documents:</strong></p>
+                <ul>
+                    <li><a href="{item.get('drive_resume_link', '#')}" target="_blank">Tailored Resume (Google Drive)</a></li>
+                </ul>
+            </div>
+            """
+
     html_content += """
         <hr/>
         <p style="font-size: 12px; color: #777;">Automated execution by GCP Cloud Run Jobs & Vertex AI.</p>
@@ -79,7 +96,7 @@ def send_executive_briefing(summary_data: dict) -> bool:
     """
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"🎯 Career OS Standup: {len(high_priority)} High Matches & {len(hiring_leads)} Manager DMs Today"
+    msg["Subject"] = f"🎯 Career OS Standup: {len(high_priority)} High Matches, {len(hiring_leads)} Manager DMs & {len(medium_priority)} Medium Matches Today"
     msg["From"] = sender_email
     msg["To"] = recipient_email
     msg.attach(MIMEText(html_content, "html"))

@@ -63,7 +63,7 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     # --------------------------------------------------------------------------
     # STEP 0: REFRESH MASTER PROFILE FROM LATEST RESUME (if one is present)
     # --------------------------------------------------------------------------
-    print("\n📄 STEP 0: Checking CandidateResumeDoc/ for an updated resume...")
+    print("\n📄 STEP 0: Checking mounted GCS volume & local folders for updated base resume...")
     try:
         resume_path = find_latest_resume_in_candidate_folder()
         if resume_path:
@@ -71,7 +71,8 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
             generate_master_profile(str(resume_path))
             print("✅ STEP 0 COMPLETE: master_profile.json refreshed from latest resume.")
         else:
-            print("ℹ️  No resume found in CandidateResumeDoc/. Using existing master_profile.json as-is.")
+            print(
+                "ℹ️ No resume found in mounted GCS base_resume/ folder or local folder. Using existing master_profile.json as-is.")
     except Exception as e:
         print(f"⚠️ Warning during master profile regeneration: {str(e)}. Proceeding with existing master_profile.json.")
 
