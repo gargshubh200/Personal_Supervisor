@@ -60,42 +60,26 @@ def set_spacing(paragraph, space_before=0, space_after=2, line_spacing=1.15):
 
 def _get_drive_service():
     creds = None
-    service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
     token_path = Path(__file__).parent / "token.json"
-    credentials_path = Path(__file__).parent / "credentials.json"
 
-    # 1. Try local service account file if present
-    if os.path.exists(service_account_path):
-        try:
-            creds = service_account.Credentials.from_service_account_file(
-                service_account_path, scopes=DRIVE_SCOPES
-            )
-        except Exception as e:
-            print(f"⚠️ Service account file auth failed: {e}")
-
-    # 2. Try local user tokens (OAuth)
-    elif token_path.exists():
+    # 1. Try local user OAuth tokens (token.json generated locally)
+    # Note: service_account.json is intentionally skipped for Drive — service
+    # accounts have no Drive storage allocation and will hit storageQuotaExceeded.
+    if token_path.exists():
         try:
             creds = Credentials.from_authorized_user_file(str(token_path), DRIVE_SCOPES)
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
-                with open(token_path, "w", encoding="utf-8") as token_file:
-                    token_file.write(creds.to_json())
+                try:
+                    with open(token_path, "w", encoding="utf-8") as token_file:
+                        token_file.write(creds.to_json())
+                except OSError:
+                    pass  # Read-only filesystem in Cloud Run — skip silently
         except Exception as e:
             print(f"⚠️ Token auth failed: {e}")
             creds = None
 
-    elif credentials_path.exists():
-        try:
-            flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), DRIVE_SCOPES)
-            creds = flow.run_local_server(port=0)
-            with open(token_path, "w", encoding="utf-8") as token_file:
-                token_file.write(creds.to_json())
-        except Exception as e:
-            print(f"⚠️ Credentials auth failed: {e}")
-            creds = None
-
-    # 3. Fallback to Cloud Run / GCP Application Default Credentials (ADC)
+    # 2. Fallback to Cloud Run / GCP Application Default Credentials (ADC)
     if not creds:
         try:
             creds, _ = google.auth.default(scopes=DRIVE_SCOPES)
