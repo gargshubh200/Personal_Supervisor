@@ -295,14 +295,16 @@ TAVILY_API_KEY=your_tavily_key
 ```
 
 You'll also need:
-- `OtherMCP/credentials.json` — OAuth client credentials for Google
-  Drive/Docs (downloaded from Google Cloud Console). The first run will open a
-  browser to authorize and save a `token.json` next to it.
 - Google Cloud authentication for Vertex AI and Firestore — either run
   `gcloud auth application-default login` locally, or set
   `GOOGLE_APPLICATION_CREDENTIALS` to point at a service account key file.
   Update the hardcoded `project="career-os-project"` references in the
   `SubAgents/*.py` files and `db_manager.py` to your own GCP project ID.
+- `OtherMCP/credentials.json` — OAuth client credentials for Google
+  Drive/Docs (downloaded from Google Cloud Console). This is the 
+  pre-requisite for the next step.
+- `OtherMCP/token.json` — the python file `run_auth.py` generates this 
+  file for Google Drive API access (run it once locally)
 
 ### 4. Add your resume
 

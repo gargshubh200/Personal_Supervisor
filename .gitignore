@@ -11,6 +11,7 @@ OtherMCP/token.json
 *.pdf
 *.log
 SubAgents/applications_log.json
+run_auth.py
 
 # Python & IDE
 __pycache__/

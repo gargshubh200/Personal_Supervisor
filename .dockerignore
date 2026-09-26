@@ -13,3 +13,4 @@ OtherMCP/gcs_storage/output_resumes
 SubAgents/applications_log.json
 career_os_workflow_graph.png
 generate_workflow_graph.py
+run_auth.py
