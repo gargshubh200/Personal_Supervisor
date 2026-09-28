@@ -184,7 +184,11 @@ class DatabaseManager:
         daily_apps = []
         for doc in app_docs:
             data = doc.to_dict()
-            if data.get("created_at", "").startswith(today_str):
+            # if data.get("created_at", "").startswith(today_str):
+            if (data.get("decision", "") == "APPLY" and
+                    (data.get("status", "") =="READY_TO_APPLY") and
+                    (data.get("strategy_priority", "") in ("HIGH", "MEDIUM"))
+            ):
                 daily_apps.append(data)
         daily_apps = sorted(daily_apps, key=lambda x: x.get("match_score", 0), reverse=True)
 

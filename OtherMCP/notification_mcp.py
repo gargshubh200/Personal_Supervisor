@@ -17,8 +17,8 @@ def send_executive_briefing(summary_data: dict) -> bool:
     job_records = summary_data.get("job_applications", [])
     hiring_leads = summary_data.get("hiring_leads", [])
 
-    high_priority = [r for r in job_records if r.get("strategy") == "HIGH"]
-    medium_priority = [r for r in job_records if r.get("strategy") == "MEDIUM"]
+    high_priority = [r for r in job_records if r.get("strategy_priority") == "HIGH"]
+    medium_priority = [r for r in job_records if r.get("strategy_priority") == "MEDIUM"]
 
     html_content = f"""
     <html>
