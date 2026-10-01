@@ -166,6 +166,36 @@ Each run walks through the same sequence of steps, in order:
 Every job and hiring lead is saved to a small database so nothing gets
 processed twice across runs.
 
+### What's actually in the daily email
+
+The two halves of the daily email are scoped differently:
+
+- **Hiring manager DMs** — only the ones drafted in *that specific run*
+  (`hiring_manager_leads` documents created today).
+- **Job applications** — *every* HIGH/MEDIUM-priority application whose
+  status is currently `READY_TO_APPLY` in Firestore, not just today's. This
+  is deliberate: it's a standing "here's what's still waiting on you" list,
+  not a daily diff.
+
+The consequence: a `READY_TO_APPLY` job keeps appearing in the email every
+single day until you change its status. Once you've actually applied (or
+decided to pass), update that job's status in Firestore so it stops showing
+up:
+
+1. Open the [Firestore console](https://console.cloud.google.com/firestore/databases/-default-/data) for your GCP project (`career-os-project` unless you set `GCP_PROJECT_ID`).
+2. Go to the **`job_applications`** collection → find the document for that
+   company/role (document ID is a MD5 hash of `company_lower_title_lower`;
+   easiest way to find it is Firestore's query filter on the `company` and
+   `title` fields shown in the email).
+3. Edit the **`status`** field and set it to whichever of the project's
+   lifecycle states actually applies — typically `APPLIED` once you've
+   submitted it, or `SKIPPED`/`WITHDRAWN` if you decided to pass. The full
+   list (see `ApplicationStatus` in `db_manager.py`) is: `DISCOVERED`,
+   `ANALYZED`, `SKIPPED`, `SHORTLISTED`, `TAILORED`, `READY_TO_APPLY`,
+   `APPLIED`, `OA`, `INTERVIEW`, `REJECTED`, `WITHDRAWN`, `OFFER`. Anything
+   other than `READY_TO_APPLY` (with `decision == "APPLY"` and HIGH/MEDIUM
+   priority) drops it out of the next email.
+
 ---
 
 ## The moving pieces
