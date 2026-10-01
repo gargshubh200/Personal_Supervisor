@@ -1,11 +1,10 @@
-import os
 import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from google import genai
 from google.genai import types
+
+from SubAgents.gemini_common import client, gemini_retry, GEMINI_MODEL
 
 # Optional document parsing imports
 try:
@@ -17,14 +16,6 @@ try:
     import pypdf
 except ImportError:
     pypdf = None
-
-load_dotenv()
-
-client = genai.Client(
-    vertexai=True,
-    project="career-os-project",
-    location="global"
-)
 
 REPO_ROOT = Path(__file__).parent.parent
 OUTPUT_PROFILE_PATH = REPO_ROOT / "master_profile.json"
@@ -169,6 +160,22 @@ def extract_text_from_file(file_path: Path) -> str:
 # Profile Generation Engine
 # ------------------------------------------------------------------
 
+@gemini_retry
+def _call_profile_parser(prompt: str) -> str:
+    """Isolated so only the Gemini call itself is retried, not the surrounding file I/O."""
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=2048),
+            response_mime_type="application/json",
+            response_schema=MasterProfileSchema,
+            temperature=0.1
+        )
+    )
+    return response.text
+
+
 def generate_master_profile(resume_file_path: str) -> Dict[str, Any]:
     file_path = Path(resume_file_path)
     print(f"📄 Extracting text from: {file_path.name}...")
@@ -194,18 +201,8 @@ def generate_master_profile(resume_file_path: str) -> Dict[str, Any]:
     {raw_resume_text}
     """
 
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            thinking_config=types.ThinkingConfig(thinking_budget=2048),
-            response_mime_type="application/json",
-            response_schema=MasterProfileSchema,
-            temperature=0.1
-        )
-    )
-
-    profile_dict = json.loads(response.text)
+    response_text = _call_profile_parser(prompt)
+    profile_dict = json.loads(response_text)
 
     with open(OUTPUT_PROFILE_PATH, "w", encoding="utf-8") as f:
         json.dump(profile_dict, f, indent=2)

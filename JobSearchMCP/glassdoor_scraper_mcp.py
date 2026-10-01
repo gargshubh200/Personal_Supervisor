@@ -95,8 +95,8 @@ def fetch_glassdoor_jobs(
     Passes stringified JSON arrays for multi-query and multi-location input parameters.
     """
     if not apify_client:
-        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning fallback feed.")
-        return _fallback_glassdoor_jobs()
+        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning no jobs.")
+        return []
 
     has_india_location = any(loc.lower() in INDIA_LOCATION_KEYWORDS for loc in locations)
     country_code = "IN" if has_india_location else "US"
@@ -166,24 +166,12 @@ def fetch_glassdoor_jobs(
         )
 
         print(f"✅ GLASSDOOR MCP: Retained {len(jobs)} relevant engineering job postings.")
-        return jobs if jobs else _fallback_glassdoor_jobs()
+        return jobs
 
     except Exception as e:
         print(f"❌ GLASSDOOR MCP ERROR: {str(e)}")
-        return _fallback_glassdoor_jobs()
+        return []
 
-
-def _fallback_glassdoor_jobs() -> List[Dict[str, str]]:
-    return [{
-        "platform": "Glassdoor",
-        "company": "Databricks (Glassdoor)",
-        "role": "Forward Deployed AI Engineer",
-        "url": "https://www.glassdoor.com/job-listing/sample",
-        "salary": "INR 15,000,000 - 25,000,000 / YEAR",
-        "company_rating": 4.5,
-        "location": "Bengaluru / Remote",
-        "jd_text": "Databricks is hiring Forward Deployed Engineers to deploy agentic workflows on enterprise platform architecture."
-    }]
 
 
 if __name__ == "__main__":

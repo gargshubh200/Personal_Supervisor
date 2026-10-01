@@ -1,34 +1,14 @@
-import os
 import json
 import re
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from google import genai
 from google.genai import types
 from langfuse import observe, get_client
 
 from OtherMCP.ground_truth_mcp import verify_claim, _load_profile
 from SubAgents.jd_analysis_agent import JDAnalysis, analyze_job_description
+from SubAgents.gemini_common import client, gemini_retry, GEMINI_MODEL
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from google.genai.errors import ClientError, ServerError
-
-gemini_retry = retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=2, min=10, max=60),
-    retry=retry_if_exception_type((ClientError, ServerError)),
-    reraise=True
-)
-
-load_dotenv()
-
-# GCP Vertex AI Client
-client = genai.Client(
-    vertexai=True,
-    project="career-os-project",
-    location="global"
-)
 # Single-pass structured extraction (response_schema) -> client.models.generate_content().
 # This is not a multi-turn/tool-calling agent loop, so automatic function calling (which
 # Google recommends only via Chat.send_message) is not a concern here.
@@ -111,7 +91,7 @@ def generate_cover_letter(
     """
 
     response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(thinking_budget=2048),
@@ -126,14 +106,14 @@ def generate_cover_letter(
 
 @gemini_retry
 @observe(name="Cover Letter: Ground-Truth Audit")
-def verify_cover_letter_safety(cover_letter: CoverLetterOutput) -> Dict[str, Any]:
+def verify_cover_letter_safety(cover_letter: CoverLetterOutput, allowed_context: str = "") -> Dict[str, Any]:
     audit_results = []
     has_violations = False
 
     all_paragraphs = [cover_letter.opening_paragraph] + cover_letter.body_paragraphs + [cover_letter.closing_paragraph]
 
     for para in all_paragraphs:
-        check = verify_claim(para)
+        check = verify_claim(para, extra_allowed_text=allowed_context)
         audit_results.append({
             "paragraph": para[:100] + "...",
             "verified": check["verified"],
@@ -193,7 +173,7 @@ def review_cover_letter_agent(
     """
 
     response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(thinking_budget=1536),
@@ -217,17 +197,19 @@ def review_cover_letter_agent(
     return review
 
 
-@gemini_retry
 @observe(name="Cover Letter Agent: Workflow Run")
 def run_cover_letter_workflow(
     jd_text: str,
     company_name: str,
     max_iterations: int = 3,
-    quality_threshold: int = 85
+    quality_threshold: int = 85,
+    jd_analysis: Optional[JDAnalysis] = None
 ) -> Dict[str, Any]:
-    print(f"🚀 [Cover Letter Agent] Extracting JD Requirements for {company_name}...")
-    jd_analysis = analyze_job_description(jd_text)
+    if jd_analysis is None:
+        print(f"🚀 [Cover Letter Agent] Extracting JD Requirements for {company_name}...")
+        jd_analysis = analyze_job_description(jd_text)
     master_profile = _load_profile()
+    allowed_context = f"{company_name} {jd_analysis.target_role}"
 
     audit_feedback = None
     review_feedback = None
@@ -241,16 +223,20 @@ def run_cover_letter_workflow(
         )
 
         print("🛡️ [Cover Letter Audit] Verifying Ground-Truth Claims...")
-        audit = verify_cover_letter_safety(cl_output)
+        audit = verify_cover_letter_safety(cl_output, allowed_context=allowed_context)
 
         print("🧐 [Cover Letter Review] Evaluating Quality & Narrative Tone...")
         review = review_cover_letter_agent(
             jd_analysis, cl_output, quality_threshold=quality_threshold
         )
+        # Decide the quality bar in Python rather than trusting the LLM's own
+        # boolean, which can disagree with the score it just returned.
+        meets_bar = review.overall_score >= quality_threshold
+        review.meets_quality_bar = meets_bar
 
-        print(f"📊 Cover Letter Score: {review.overall_score}/100 | Meets Bar ({quality_threshold}+): {review.meets_quality_bar} | Safety Passed: {audit['passed_audit']}")
+        print(f"📊 Cover Letter Score: {review.overall_score}/100 | Meets Bar ({quality_threshold}+): {meets_bar} | Safety Passed: {audit['passed_audit']}")
 
-        if audit["passed_audit"] and review.overall_score > highest_score:
+        if audit["passed_audit"] and review.overall_score >= highest_score:
             highest_score = review.overall_score
             best_candidate = {
                 "cover_letter": cl_output.model_dump(),
@@ -260,7 +246,7 @@ def run_cover_letter_workflow(
                 "early_stopped": False
             }
 
-        if audit["passed_audit"] and review.meets_quality_bar:
+        if audit["passed_audit"] and meets_bar:
             print(f"🎯 EARLY STOPPING: Cover Letter score ({review.overall_score}/100) met threshold at iteration {iteration}!")
             best_candidate["early_stopped"] = True
             return best_candidate

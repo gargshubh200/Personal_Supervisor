@@ -1,34 +1,13 @@
-import os
 import json
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from google import genai
 from google.genai import types
 from langfuse import observe, get_client
 
 from OtherMCP.ground_truth_mcp import verify_claim, _load_profile
 from SubAgents.jd_analysis_agent import JDAnalysis, analyze_job_description
+from SubAgents.gemini_common import client, gemini_retry, GEMINI_MODEL
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from google.genai.errors import ClientError, ServerError
-
-gemini_retry = retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=2, min=10, max=60),
-    retry=retry_if_exception_type((ClientError, ServerError)),
-    reraise=True
-)
-
-load_dotenv()
-
-# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-# NEW: GCP Vertex AI Client (Draws from your ₹28,694 GCP credits!)
-client = genai.Client(
-    vertexai=True,
-    project="career-os-project",
-    location="global"
-)
 # Single-pass structured extraction (response_schema) -> client.models.generate_content().
 # This is not a multi-turn/tool-calling agent loop, so automatic function calling (which
 # Google recommends only via Chat.send_message) is not a concern here.
@@ -85,6 +64,7 @@ def generate_tailored_bullets(
     1. DO NOT invent new companies, metrics, numbers, or tools not present in the master profile.
     2. Maintain all quantitative metrics strictly as written (e.g., 98%, 60%, 40%, 90+ environments, 15+ clients).
     3. Re-frame technical phrasing toward applied AI, software engineering, and system reliability rather than pure data pipeline maintenance.
+    4. 'original_bullet' MUST be copied verbatim, character-for-character, from an 'achievements' entry in the master profile.
 
     TARGET JOB ANALYSIS:
     {jd_analysis.model_dump_json(indent=2)}
@@ -94,7 +74,7 @@ def generate_tailored_bullets(
     """
 
     response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(thinking_budget=2048),
@@ -155,7 +135,7 @@ def review_tailored_content_agent(
     """
 
     response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(thinking_budget=1536),
@@ -178,15 +158,16 @@ def review_tailored_content_agent(
 
     return review
 
-@gemini_retry
 @observe(name="Resume Tailoring Agent: Workflow Run")
 def run_resume_tailoring_workflow(
     jd_text: str,
     max_iterations: int = 3,
-    quality_threshold: int = 85
+    quality_threshold: int = 85,
+    jd_analysis: Optional[JDAnalysis] = None
 ) -> Dict[str, Any]:
-    print("🚀 [Resume Agent] Extracting JD Keywords & Requirements...")
-    jd_analysis = analyze_job_description(jd_text)
+    if jd_analysis is None:
+        print("🚀 [Resume Agent] Extracting JD Keywords & Requirements...")
+        jd_analysis = analyze_job_description(jd_text)
     master_profile = _load_profile()
 
     audit_feedback = None
@@ -207,10 +188,14 @@ def run_resume_tailoring_workflow(
         review = review_tailored_content_agent(
             jd_analysis, tailored_output, quality_threshold=quality_threshold
         )
+        # Decide the quality bar in Python rather than trusting the LLM's own
+        # boolean, which can disagree with the score it just returned.
+        meets_bar = review.overall_score >= quality_threshold
+        review.meets_quality_bar = meets_bar
 
-        print(f"📊 Resume Score: {review.overall_score}/100 | Meets Bar ({quality_threshold}+): {review.meets_quality_bar} | Safety Passed: {audit['passed_audit']}")
+        print(f"📊 Resume Score: {review.overall_score}/100 | Meets Bar ({quality_threshold}+): {meets_bar} | Safety Passed: {audit['passed_audit']}")
 
-        if audit["passed_audit"] and review.overall_score > highest_score:
+        if audit["passed_audit"] and review.overall_score >= highest_score:
             highest_score = review.overall_score
             best_candidate = {
                 "jd_analysis": jd_analysis.model_dump(),
@@ -221,7 +206,7 @@ def run_resume_tailoring_workflow(
                 "early_stopped": False
             }
 
-        if audit["passed_audit"] and review.meets_quality_bar:
+        if audit["passed_audit"] and meets_bar:
             print(f"🎯 EARLY STOPPING: Resume score ({review.overall_score}/100) met threshold at iteration {iteration}!")
             best_candidate["early_stopped"] = True
             return best_candidate

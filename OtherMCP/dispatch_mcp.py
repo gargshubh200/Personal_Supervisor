@@ -1,5 +1,7 @@
 import os
+import re
 import json
+import difflib
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -52,6 +54,35 @@ def set_spacing(paragraph, space_before=0, space_after=2, line_spacing=1.15):
     p_format.space_before = Pt(space_before)
     p_format.space_after = Pt(space_after)
     p_format.line_spacing = line_spacing
+
+
+def _normalize_bullet(text: str) -> str:
+    return re.sub(r"[^a-z0-9%+<>.]+", " ", (text or "").lower()).strip()
+
+
+class _TailoredBulletResolver:
+    """Maps master-profile bullets to their tailored rewrite, tolerating minor LLM drift."""
+
+    def __init__(self, tailored_bullets: List[Dict[str, Any]]):
+        self.lookup = {
+            _normalize_bullet(b.get("original_bullet", "")): b.get("tailored_bullet", "")
+            for b in tailored_bullets
+            if b.get("original_bullet") and b.get("tailored_bullet")
+        }
+        self.used_keys = set()
+
+    def resolve(self, original_bullet: str) -> str:
+        key = _normalize_bullet(original_bullet)
+        if key not in self.lookup:
+            close = difflib.get_close_matches(key, list(self.lookup.keys()), n=1, cutoff=0.85)
+            if not close:
+                return original_bullet
+            key = close[0]
+        self.used_keys.add(key)
+        return self.lookup[key]
+
+    def unmatched_count(self) -> int:
+        return len(set(self.lookup) - self.used_keys)
 
 
 # ------------------------------------------------------------------
@@ -153,7 +184,7 @@ def generate_tailored_resume_docx(
         role_title: str,
         tailored_summary: str,
         tailored_bullets: List[Dict[str, Any]]
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     profile = _load_profile()
     info = profile["personal_info"]
 
@@ -198,7 +229,7 @@ def generate_tailored_resume_docx(
     sum_run.font.size = Pt(10)
 
     add_section_heading("Experience")
-    bullet_map = {b.get("original_bullet", ""): b.get("tailored_bullet", "") for b in tailored_bullets}
+    resolver = _TailoredBulletResolver(tailored_bullets)
 
     for exp in profile.get("experience", []):
         job_header = doc.add_paragraph()
@@ -227,7 +258,7 @@ def generate_tailored_resume_docx(
             proj_run.font.italic = True
 
             for orig_bullet in (project.get("achievements") or []):
-                bullet_text = bullet_map.get(orig_bullet, orig_bullet)
+                bullet_text = resolver.resolve(orig_bullet)
                 bp = doc.add_paragraph(style='List Bullet')
                 set_spacing(bp, space_before=0, space_after=2)
                 b_run = bp.add_run(bullet_text)
@@ -235,12 +266,16 @@ def generate_tailored_resume_docx(
                 b_run.font.size = Pt(9.5)
 
         for orig_bullet in (exp.get("achievements") or []):
-            bullet_text = bullet_map.get(orig_bullet, orig_bullet)
+            bullet_text = resolver.resolve(orig_bullet)
             bp = doc.add_paragraph(style='List Bullet')
             set_spacing(bp, space_before=0, space_after=2)
             b_run = bp.add_run(bullet_text)
             b_run.font.name = "Arial"
             b_run.font.size = Pt(9.5)
+
+    unmatched = resolver.unmatched_count()
+    if unmatched:
+        print(f"⚠️ Dispatch: {unmatched} tailored bullet(s) could not be matched to a master-profile bullet and were not used.")
 
     add_section_heading("Skills")
     skills = profile.get("skills", {})
@@ -336,7 +371,8 @@ def generate_tailored_resume_docx(
                 "role_title": role_title,
                 "local_path": str(output_path),
                 "drive_status": drive_result["status"],
-                "drive_url": str(drive_result.get("drive_url"))
+                "drive_url": str(drive_result.get("drive_url")),
+                "unmatched_tailored_bullets": unmatched
             }
         )
     except Exception:
@@ -344,8 +380,10 @@ def generate_tailored_resume_docx(
 
     return {
         "local_path": str(output_path),
-        "drive_url": drive_result.get("drive_url") or "Upload skipped or failed",
-        "file_id": drive_result.get("file_id", "")
+        "drive_url": drive_result.get("drive_url"),  # None when upload skipped/failed
+        "drive_status": drive_result["status"],
+        "file_id": drive_result.get("file_id", ""),
+        "unmatched_tailored_bullets": unmatched
     }
 
 
@@ -359,7 +397,7 @@ def generate_cover_letter_docx(
         company_name: str,
         role_title: str,
         cover_letter_data: Dict[str, Any]
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
     Renders structured cover letter output into an executive DOCX document,
     saves it locally, and uploads it to Google Drive.
@@ -467,6 +505,7 @@ def generate_cover_letter_docx(
 
     return {
         "local_path": str(output_path),
-        "drive_url": drive_result.get("drive_url") or "Upload skipped or failed",
+        "drive_url": drive_result.get("drive_url"),  # None when upload skipped/failed
+        "drive_status": drive_result["status"],
         "file_id": drive_result.get("file_id", "")
     }

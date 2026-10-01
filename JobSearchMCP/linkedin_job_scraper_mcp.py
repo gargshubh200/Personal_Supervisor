@@ -92,8 +92,8 @@ def fetch_linkedin_jobs(
     Batches search terms into 5-operator-safe Boolean queries for maximum throughput.
     """
     if not apify_client:
-        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning fallback feed.")
-        return _fallback_linkedin_jobs()
+        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning no jobs.")
+        return []
 
     # Batch search_queries in groups of 3 joined by OR (2 OR operators per query string).
     # Confirmed via HarvestAPI docs: LinkedIn boolean search caps each query string at
@@ -114,8 +114,8 @@ def fetch_linkedin_jobs(
         batched_queries.append(candidate_query)
 
     if not batched_queries:
-        print("⚠️ LinkedIn MCP: No valid batched queries constructed. Returning fallback feed.")
-        return _fallback_linkedin_jobs()
+        print("⚠️ LinkedIn MCP: No valid batched queries constructed. Returning no jobs.")
+        return []
 
     # HarvestAPI Input Payload
     run_input = {
@@ -180,22 +180,12 @@ def fetch_linkedin_jobs(
         )
 
         print(f"✅ LINKEDIN MCP: Retained {len(jobs)} relevant engineering job postings.")
-        return jobs if jobs else _fallback_linkedin_jobs()
+        return jobs
 
     except Exception as e:
         print(f"❌ LINKEDIN MCP ERROR: {str(e)}")
-        return _fallback_linkedin_jobs()
+        return []
 
-
-def _fallback_linkedin_jobs() -> List[Dict[str, str]]:
-    return [{
-        "platform": "LinkedIn",
-        "company": "Scale AI",
-        "role": "Forward Deployed Engineer - Applied GenAI",
-        "url": "https://scale.com/careers",
-        "location": "Bengaluru / Remote",
-        "jd_text": "Scale AI is seeking Forward Deployed Engineers to design, deploy, and scale customer-facing AI agent architectures and fine-tuned LLM workflows directly in client cloud environments."
-    }]
 
 
 if __name__ == "__main__":

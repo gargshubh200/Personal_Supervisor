@@ -436,9 +436,8 @@ def search_hiring_manager_posts(
         List of verified hiring manager lead dicts.
     """
     if not apify_client:
-        print("⚠️  APIFY_API_TOKEN not set. Returning fallback lead.")
-        role = (search_queries or DEFAULT_HIRING_POST_ROLES)[0]
-        return _fallback_hiring_lead(role)
+        print("⚠️  APIFY_API_TOKEN not set. Skipping hiring-post search.")
+        return []
 
     roles = search_queries or DEFAULT_HIRING_POST_ROLES
     locations = locations or []
@@ -575,28 +574,7 @@ def search_hiring_manager_posts(
 
     print(f"\n📊 LINKEDIN POSTS MCP SUMMARY: {len(all_leads)} verified hiring manager leads.")
 
-    if not all_leads:
-        role = (roles)[0] if roles else "Software Engineer"
-        return _fallback_hiring_lead(role)
-
     return all_leads
-
-
-def _fallback_hiring_lead(role: str) -> List[Dict[str, Any]]:
-    """Returns a single synthetic lead when Apify is unavailable or returns no results."""
-    return [{
-        "manager_name": "Alex Vance",
-        "manager_title": "VP of Engineering & Applied AI at Cognition",
-        "manager_profile_url": "https://linkedin.com/in/alexvance-example",
-        "matched_pattern": "Pattern_A_Direct_Intent",
-        "post_url": "https://linkedin.com/posts/alexvance-1234",
-        "post_text": (
-            f"I'm hiring a {role} on my team in Bengaluru / Remote to lead "
-            f"AI infrastructure work. DM me your resume directly."
-        ),
-        "posted_ago": "1 day ago",
-        "engagement_likes": 14
-    }]
 
 
 if __name__ == "__main__":

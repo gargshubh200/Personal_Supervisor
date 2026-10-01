@@ -44,8 +44,8 @@ def fetch_ambitionbox_jobs(
     supporting multi-query target roles and location hubs in the India tech ecosystem.
     """
     if not apify_client:
-        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning fallback feed.")
-        return _fallback_ambitionbox_jobs()
+        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning no jobs.")
+        return []
 
     # Determine primary location and build search URLs for top 3 target roles
     primary_location = locations[0] if locations else "Bengaluru"
@@ -142,26 +142,12 @@ def fetch_ambitionbox_jobs(
         )
 
         print(f"✅ AMBITIONBOX MCP: Retained {len(jobs)} relevant engineering job postings.")
-        return jobs if jobs else _fallback_ambitionbox_jobs()
+        return jobs
 
     except Exception as e:
         print(f"❌ AMBITIONBOX MCP ERROR: {str(e)}")
-        return _fallback_ambitionbox_jobs()
+        return []
 
-
-def _fallback_ambitionbox_jobs() -> List[Dict[str, str]]:
-    return [{
-        "platform": "AmbitionBox",
-        "company": "o9 Solutions (AmbitionBox)",
-        "role": "Software Engineer - Applied AI Systems",
-        "url": "https://www.ambitionbox.com/jobs",
-        "salary": "INR 1,500,000 - 2,500,000",
-        "experience": "2-4 yrs",
-        "company_rating": 4.2,
-        "location": "Bengaluru",
-        "skills": ["Python", "FastAPI", "ANTLR", "LangChain"],
-        "jd_text": "Build enterprise semantic context generation engines, graph algorithms, and multi-agent frameworks."
-    }]
 
 
 if __name__ == "__main__":

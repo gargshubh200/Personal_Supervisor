@@ -1,6 +1,7 @@
 import json
+import re
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Set
 from mcp.server.mcpserver import MCPServer
 
 # Initialize FastMCP Server
@@ -8,37 +9,67 @@ mcp = MCPServer("GroundTruthServer")
 
 DATA_PATH = Path(__file__).parent.parent / "master_profile.json"
 
+# Commas inside numbers ("1,000") are stripped before tokenizing so they compare equal.
+_THOUSANDS_SEPARATOR_REGEX = re.compile(r"(?<=\d),(?=\d)")
+_NUMBER_TOKEN_REGEX = re.compile(r"\d+(?:\.\d+)?")
+
 
 def _load_profile() -> Dict[str, Any]:
     with open(DATA_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
+def _extract_number_tokens(text: str) -> List[str]:
+    if not text:
+        return []
+    return _NUMBER_TOKEN_REGEX.findall(_THOUSANDS_SEPARATOR_REGEX.sub("", text))
+
+
+def _collect_strings(node: Any, out: List[str]) -> None:
+    """Recursively gathers every string value in the profile (claims, bullets, dates, skills...)."""
+    if isinstance(node, str):
+        out.append(node)
+    elif isinstance(node, dict):
+        for value in node.values():
+            _collect_strings(value, out)
+    elif isinstance(node, list):
+        for value in node:
+            _collect_strings(value, out)
+
+
+def _profile_number_tokens(profile: Dict[str, Any]) -> Set[str]:
+    strings: List[str] = []
+    _collect_strings(profile, strings)
+    tokens: Set[str] = set()
+    for s in strings:
+        tokens.update(_extract_number_tokens(s))
+    return tokens
+
+
 @mcp.tool()
-def verify_claim(claim_text: str) -> Dict[str, Any]:
+def verify_claim(claim_text: str, extra_allowed_text: str = "") -> Dict[str, Any]:
     """
-    Validates whether a generated bullet or claim contains any unverified numbers or fake tools.
-    Used as an ADK guardrail callback.
+    Validates that every number in a generated bullet/claim exists somewhere in
+    master_profile.json. `extra_allowed_text` (e.g. the company name / role title)
+    contributes additional allowed numbers so names like "1Password" or "Web3"
+    don't trip the guardrail.
     """
     profile = _load_profile()
-    metrics = profile.get("verified_metrics", [])
+    allowed = _profile_number_tokens(profile) | set(_extract_number_tokens(extra_allowed_text))
+    claim_numbers = _extract_number_tokens(claim_text)
+    unverified = sorted({n for n in claim_numbers if n not in allowed})
 
-    # Simple verification logic checking metric anchors
-    known_numbers = ["98%", "60%", "40%", "90+", "15+", "15", "7", "4", "3 hours", "15 days", "2.5"]
-
-    has_number = any(char.isdigit() for char in claim_text)
-    matched_known = [num for num in known_numbers if num in claim_text]
-
-    if has_number and not matched_known:
+    if unverified:
         return {
             "verified": False,
-            "reason": "Claim contains numeric metrics not found in master_profile.json",
-            "claim": claim_text
+            "reason": f"Claim contains numbers not found in master_profile.json: {unverified}",
+            "claim": claim_text,
+            "unverified_numbers": unverified
         }
 
     return {
         "verified": True,
-        "matched_verified_facts": matched_known
+        "matched_verified_facts": sorted(set(claim_numbers))
     }
 
 

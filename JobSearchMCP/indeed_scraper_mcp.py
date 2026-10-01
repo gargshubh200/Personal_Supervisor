@@ -95,8 +95,8 @@ def fetch_indeed_jobs(
     Combines queries into search expressions and automatically maps 2-letter country codes.
     """
     if not apify_client:
-        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning fallback feed.")
-        return _fallback_indeed_jobs()
+        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning no jobs.")
+        return []
 
     # Determine 2-letter country code site ("IN" vs "US")
     has_india_location = any(loc.lower() in INDIA_LOCATION_KEYWORDS for loc in locations)
@@ -219,23 +219,12 @@ def fetch_indeed_jobs(
         )
 
         print(f"✅ INDEED MCP: Retained {len(jobs)} relevant engineering job postings.")
-        return jobs if jobs else _fallback_indeed_jobs()
+        return jobs
 
     except Exception as e:
         print(f"❌ INDEED MCP ERROR: {str(e)}")
-        return _fallback_indeed_jobs()
+        return []
 
-
-def _fallback_indeed_jobs() -> List[Dict[str, str]]:
-    return [{
-        "platform": "Indeed",
-        "company": "Palantir (Indeed)",
-        "role": "Forward Deployed Systems Engineer",
-        "url": "https://www.indeed.com/viewjob?jk=sample",
-        "salary": "INR 15,000,000 - 25,000,000 / YEAR",
-        "location": "Bengaluru / Remote",
-        "jd_text": "Palantir is seeking Forward Deployed Engineers to bridge customer platform systems and production code bases."
-    }]
 
 
 if __name__ == "__main__":

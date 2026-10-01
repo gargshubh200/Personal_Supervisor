@@ -91,8 +91,8 @@ def fetch_wellfound_jobs(
     Constructs role and location search URLs to fetch listings and extracts full descriptions, compensation, and metadata.
     """
     if not apify_client:
-        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning fallback feed.")
-        return _fallback_wellfound_jobs()
+        print("⚠️ Warning: APIFY_API_TOKEN not set in .env. Returning no jobs.")
+        return []
 
     # Build target search URLs for top 3 search queries
     top_queries = search_queries[:3]
@@ -175,23 +175,12 @@ def fetch_wellfound_jobs(
         )
 
         print(f"✅ WELLFOUND MCP: Retained {len(jobs)} relevant startup job postings.")
-        return jobs if jobs else _fallback_wellfound_jobs()
+        return jobs
 
     except Exception as e:
         print(f"❌ WELLFOUND MCP ERROR: {str(e)}")
-        return _fallback_wellfound_jobs()
+        return []
 
-
-def _fallback_wellfound_jobs() -> List[Dict[str, str]]:
-    return [{
-        "platform": "Wellfound",
-        "company": "Cognition AI (Wellfound)",
-        "role": "Applied AI Engineer - Agentic Systems",
-        "url": "https://wellfound.com/jobs/sample",
-        "compensation": "$160k – $220k • 0.1% – 0.5%",
-        "location": "Bengaluru / Remote",
-        "jd_text": "Join Cognition to build autonomous AI systems and specialized Python parser engines for code generation."
-    }]
 
 
 if __name__ == "__main__":

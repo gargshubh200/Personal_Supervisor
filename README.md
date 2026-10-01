@@ -28,15 +28,16 @@ keep in mind before you clone it:
    product for arbitrary job searches out of the box.
 
 2. **Gemini is the only LLM this project has been built and tested against.**
-   I built this end-to-end on Google's Agent Development Kit (ADK), and
-   Gemini has worked well for every task here — structured JD parsing, match
-   scoring, resume/cover-letter generation, and outreach drafting. Nothing
-   about the architecture requires Gemini specifically: ADK supports other
-   model providers, but swapping one in would need some code-level changes
-   (client setup, response-schema handling, occasional prompt tuning) rather
-   than a config flip. As with the customization point above, an LLM coding
-   assistant can carry out that kind of provider swap quickly — it just isn't
-   done here since Gemini already meets my needs.
+   I built this end-to-end on Google's `google-genai` SDK (Vertex AI) with
+   plain Python orchestration — no agent framework decides what to call next,
+   `supervisor_agent.py` does — and Gemini has worked well for every task here
+   — structured JD parsing, match scoring, resume/cover-letter generation, and
+   outreach drafting. Nothing about the architecture requires Gemini
+   specifically, but swapping in another provider would need some code-level
+   changes (client setup, response-schema handling, occasional prompt tuning)
+   rather than a config flip. As with the customization point above, an LLM
+   coding assistant can carry out that kind of provider swap quickly — it just
+   isn't done here since Gemini already meets my needs.
 
 3. **This automates preparation, not submission.** It drafts resumes, cover
    letters, and outreach messages — it never submits an application or sends
@@ -292,14 +293,18 @@ GEMINI_API_KEY=            # not required if using Vertex AI (recommended)
 APIFY_API_TOKEN=your_apify_token
 SERPER_API_KEY=your_serper_key
 TAVILY_API_KEY=your_tavily_key
+
+# GCP (optional — defaults shown)
+GCP_PROJECT_ID=career-os-project
+GEMINI_MODEL=gemini-3.5-flash
 ```
 
 You'll also need:
 - Google Cloud authentication for Vertex AI and Firestore — either run
   `gcloud auth application-default login` locally, or set
   `GOOGLE_APPLICATION_CREDENTIALS` to point at a service account key file.
-  Update the hardcoded `project="career-os-project"` references in the
-  `SubAgents/*.py` files and `db_manager.py` to your own GCP project ID.
+  Set `GCP_PROJECT_ID` in `.env` to your own GCP project ID (used by every
+  SubAgent and by `db_manager.py`).
 - `OtherMCP/credentials.json` — OAuth client credentials for Google
   Drive/Docs (downloaded from Google Cloud Console). This is the 
   pre-requisite for the next step.
@@ -396,6 +401,10 @@ introduce a number or achievement that isn't backed by that file, it's
 rejected rather than sent out. The goal is that everything the system
 produces on your behalf is something you'd be comfortable standing behind in
 an interview.
+
+Concretely, every number appearing in a generated resume bullet or cover
+letter paragraph must appear somewhere in `master_profile.json` (or in the
+target company/role name) — otherwise the draft is rejected and regenerated.
 
 ## A note on how Gemini is called
 

@@ -1,32 +1,13 @@
-import os
 import json
 from typing import List, Literal, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-from google import genai
 from google.genai import types
 from langfuse import observe, get_client
 
 from SubAgents.jd_analysis_agent import JDAnalysis
 from SubAgents.matching_agent import MatchingReport
+from SubAgents.gemini_common import client, gemini_retry, GEMINI_MODEL
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from google.genai.errors import ClientError, ServerError
-
-gemini_retry = retry(
-    stop=stop_after_attempt(5),
-    wait=wait_exponential(multiplier=2, min=10, max=60),
-    retry=retry_if_exception_type((ClientError, ServerError)),
-    reraise=True
-)
-
-load_dotenv()
-
-client = genai.Client(
-    vertexai=True,
-    project="career-os-project",
-    location="global"
-)
 # Single-pass structured extraction (response_schema) -> client.models.generate_content().
 # This is not a multi-turn/tool-calling agent loop, so automatic function calling (which
 # Google recommends only via Chat.send_message) is not a concern here.
@@ -170,7 +151,7 @@ def determine_application_strategy(
     """
 
     response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(thinking_budget=2048),

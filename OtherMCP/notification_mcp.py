@@ -1,19 +1,40 @@
 import os
+import html
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 
-def send_executive_briefing(summary_data: dict) -> bool:
-    """Formats and emails today's Career OS standup report, artifacts, and outreach drafts."""
-    sender_email = os.getenv("SENDER_EMAIL", "gargshubh200@gmail.com")
-    sender_password = os.getenv("SENDER_APP_PASSWORD")
-    recipient_email = os.getenv("RECIPIENT_EMAIL", "gargshubh200@gmail.com")
+def _render_application_card(item: dict, accent_color: str, background: str) -> str:
+    title = html.escape(str(item.get("title", "")))
+    company = html.escape(str(item.get("company", "")))
+    location = html.escape(str(item.get("location", "")))
+    match_score = item.get("match_score", "N/A")
+    priority = html.escape(str(item.get("strategy_priority", "")))
+    resume_link = item.get("drive_resume_link") or "#"
+    cover_letter_link = item.get("drive_cover_letter_link")
+    job_url = item.get("job_url")
 
-    if not sender_password:
-        print("⚠️ SENDER_APP_PASSWORD not set. Skipping email dispatch.")
-        return False
+    links = f'<li><a href="{html.escape(resume_link)}" target="_blank">Tailored Resume (Google Drive)</a></li>'
+    if cover_letter_link:
+        links += f'<li><a href="{html.escape(cover_letter_link)}" target="_blank">Cover Letter (Google Drive)</a></li>'
+    if job_url:
+        links += f'<li><a href="{html.escape(job_url)}" target="_blank">Job Posting</a></li>'
 
+    return f"""
+            <div style="background: {background}; padding: 15px; border-left: 4px solid {accent_color}; margin-bottom: 15px;">
+                <h4 style="margin: 0 0 5px 0;">{title} @ <strong>{company}</strong> ({location})</h4>
+                <p style="margin: 0 0 10px 0;"><strong>Match Score:</strong> {match_score}% | <strong>Priority:</strong> {priority}</p>
+                <p style="margin: 0 0 5px 0;"><strong>Generated Documents:</strong></p>
+                <ul>
+                    {links}
+                </ul>
+            </div>
+            """
+
+
+def build_executive_briefing(summary_data: dict) -> tuple:
+    """Builds the (subject, html_content) pair for today's Career OS standup email."""
     job_records = summary_data.get("job_applications", [])
     hiring_leads = summary_data.get("hiring_leads", [])
 
@@ -46,29 +67,26 @@ def send_executive_briefing(summary_data: dict) -> bool:
     if high_priority:
         html_content += """<h3 style="color: #2e7d32;">🔥 High-Priority Application Artifacts</h3>"""
         for item in high_priority:
-            html_content += f"""
-            <div style="background: #f9f9f9; padding: 15px; border-left: 4px solid #2e7d32; margin-bottom: 15px;">
-                <h4 style="margin: 0 0 5px 0;">{item['title']} @ <strong>{item['company']}</strong> ({item['location']})</h4>
-                <p style="margin: 0 0 10px 0;"><strong>Match Score:</strong> {item['match_score']}% | <strong>Priority:</strong> {item['strategy']}</p>
-                <p style="margin: 0 0 5px 0;"><strong>Generated Documents:</strong></p>
-                <ul>
-                    <li><a href="{item.get('drive_resume_link', '#')}" target="_blank">Tailored Resume (Google Drive)</a></li>
-                </ul>
-            </div>
-            """
+            html_content += _render_application_card(item, "#2e7d32", "#f9f9f9")
 
     # --- SECTION 2: STANDALONE HIRING MANAGER OUTREACH DMS ---
     if hiring_leads:
         html_content += """<h3 style="color: #1a73e8;">📩 Today's Hiring Manager Outreach DMs</h3>"""
         for lead in hiring_leads:
+            manager_name = html.escape(str(lead.get("manager_name", "")))
+            manager_title = html.escape(str(lead.get("manager_title", "")))
+            company = html.escape(str(lead.get("company", "")))
+            post_url = html.escape(lead.get("post_url") or "#")
+            drafted_dm = html.escape(str(lead.get("drafted_dm", "N/A")))
+
             html_content += f"""
             <div style="background: #f0f7ff; padding: 15px; border-left: 4px solid #1a73e8; margin-bottom: 15px;">
-                <h4 style="margin: 0 0 5px 0;">{lead['manager_name']} — {lead['manager_title']} (<strong>{lead['company']}</strong>)</h4>
-                <p style="margin: 0 0 5px 0;"><strong>LinkedIn Post:</strong> <a href="{lead.get('post_url', '#')}" target="_blank">View Original Post</a></p>
+                <h4 style="margin: 0 0 5px 0;">{manager_name} — {manager_title} (<strong>{company}</strong>)</h4>
+                <p style="margin: 0 0 5px 0;"><strong>LinkedIn Post:</strong> <a href="{post_url}" target="_blank">View Original Post</a></p>
 
                 <div style="background: #ffffff; padding: 12px; border: 1px solid #d0e2ff; margin-top: 10px; border-radius: 4px;">
                     <strong>Drafted DM:</strong>
-                    <p style="font-style: italic; white-space: pre-wrap; margin-top: 5px; color: #222;">{lead.get('drafted_dm', 'N/A')}</p>
+                    <p style="font-style: italic; white-space: pre-wrap; margin-top: 5px; color: #222;">{drafted_dm}</p>
                 </div>
             </div>
             """
@@ -77,16 +95,7 @@ def send_executive_briefing(summary_data: dict) -> bool:
     if medium_priority:
         html_content += """<h3 style="color: #f57c00;">⚡ Medium-Priority Application Artifacts</h3>"""
         for item in medium_priority:
-            html_content += f"""
-            <div style="background: #fffbe6; padding: 15px; border-left: 4px solid #f57c00; margin-bottom: 15px;">
-                <h4 style="margin: 0 0 5px 0;">{item['title']} @ <strong>{item['company']}</strong> ({item['location']})</h4>
-                <p style="margin: 0 0 10px 0;"><strong>Match Score:</strong> {item['match_score']}% | <strong>Priority:</strong> {item['strategy']}</p>
-                <p style="margin: 0 0 5px 0;"><strong>Generated Documents:</strong></p>
-                <ul>
-                    <li><a href="{item.get('drive_resume_link', '#')}" target="_blank">Tailored Resume (Google Drive)</a></li>
-                </ul>
-            </div>
-            """
+            html_content += _render_application_card(item, "#f57c00", "#fffbe6")
 
     html_content += """
         <hr/>
@@ -95,8 +104,24 @@ def send_executive_briefing(summary_data: dict) -> bool:
     </html>
     """
 
+    subject = f"🎯 Career OS Standup: {len(high_priority)} High Matches, {len(hiring_leads)} Manager DMs & {len(medium_priority)} Medium Matches Today"
+    return subject, html_content
+
+
+def send_executive_briefing(summary_data: dict) -> bool:
+    """Formats and emails today's Career OS standup report, artifacts, and outreach drafts."""
+    sender_email = os.getenv("SENDER_EMAIL", "gargshubh200@gmail.com")
+    sender_password = os.getenv("SENDER_APP_PASSWORD")
+    recipient_email = os.getenv("RECIPIENT_EMAIL", "gargshubh200@gmail.com")
+
+    if not sender_password:
+        print("⚠️ SENDER_APP_PASSWORD not set. Skipping email dispatch.")
+        return False
+
+    subject, html_content = build_executive_briefing(summary_data)
+
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"🎯 Career OS Standup: {len(high_priority)} High Matches, {len(hiring_leads)} Manager DMs & {len(medium_priority)} Medium Matches Today"
+    msg["Subject"] = subject
     msg["From"] = sender_email
     msg["To"] = recipient_email
     msg.attach(MIMEText(html_content, "html"))

@@ -1,7 +1,9 @@
 import hashlib
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Literal
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 # Rich Application Lifecycle States
 ApplicationStatus = Literal[
@@ -22,7 +24,7 @@ ApplicationStatus = Literal[
 
 class DatabaseManager:
     def __init__(self, app_collection="job_applications", lead_collection="hiring_manager_leads"):
-        self.db = firestore.Client(project="career-os-project")
+        self.db = firestore.Client(project=os.getenv("GCP_PROJECT_ID", "career-os-project"))
         self.app_collection = self.db.collection(app_collection)
         self.lead_collection = self.db.collection(lead_collection)
 
@@ -63,7 +65,7 @@ class DatabaseManager:
         """Persists or updates an application record with full lifecycle state & audit trail."""
         doc_id = self._generate_job_id(company, title)
         doc_ref = self.app_collection.document(doc_id)
-        now_str = datetime.utcnow().isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
 
         existing_doc = doc_ref.get()
         status_history = []
@@ -120,7 +122,7 @@ class DatabaseManager:
             print(f"⚠️ Cannot update status: Document {doc_id} ({company} - {title}) not found.")
             return False
 
-        now_str = datetime.utcnow().isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
         data = doc.to_dict()
         status_history = data.get("status_history", [])
 
@@ -166,8 +168,8 @@ class DatabaseManager:
             "post_text": post_text[:1000],
             "drafted_dm": drafted_dm,
             "outreach_status": "DRAFTED",  # DRAFTED, SENT, REPLIED
-            "updated_at": datetime.utcnow().isoformat(),
-            "created_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
 
         self.lead_collection.document(doc_id).set(payload, merge=True)
@@ -178,9 +180,9 @@ class DatabaseManager:
     # DAILY BRIEFING QUERY
     # --------------------------------------------------------------------------
     def get_daily_standup_summary(self) -> dict:
-        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        app_docs = self.app_collection.stream()
+        app_docs = self.app_collection.where(filter=FieldFilter("status", "==", "READY_TO_APPLY")).stream()
         daily_apps = []
         for doc in app_docs:
             data = doc.to_dict()
@@ -192,7 +194,7 @@ class DatabaseManager:
                 daily_apps.append(data)
         daily_apps = sorted(daily_apps, key=lambda x: x.get("match_score", 0), reverse=True)
 
-        lead_docs = self.lead_collection.stream()
+        lead_docs = self.lead_collection.where(filter=FieldFilter("created_at", ">=", today_str)).stream()
         daily_leads = []
         for doc in lead_docs:
             data = doc.to_dict()

@@ -1,4 +1,6 @@
 import os
+import contextvars
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from langfuse import observe
 
@@ -50,6 +52,142 @@ def is_location_eligible(job_location: str, allowed_locations: list) -> bool:
         return True
     loc_lower = job_location.lower()
     return any(target.lower() in loc_lower for target in allowed_locations) or "remote" in loc_lower
+
+
+def _job_source_fetchers() -> list:
+    """(toggle_name, zero-arg fetcher) pairs for every STEP 2 job source."""
+    return [
+        ("ats_direct", lambda: fetch_ats_direct_jobs(per_company_limit=3)),
+        ("ats_google_dork", lambda: search_ats_via_google_dork(limit=20)),
+        ("linkedin_jobs", lambda: fetch_linkedin_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit_per_query=10)),
+        ("indeed", lambda: fetch_indeed_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=10)),
+        ("wellfound", lambda: fetch_wellfound_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=10)),
+        ("glassdoor", lambda: fetch_glassdoor_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=10)),
+        ("ambitionbox", lambda: fetch_ambitionbox_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5)),
+    ]
+
+
+def _collect_raw_jobs() -> list:
+    """Fetches from every enabled job source concurrently; one source failing doesn't block the others."""
+    enabled = [(name, fetch) for name, fetch in _job_source_fetchers() if MCP_TOGGLES.get(name)]
+    raw_jobs = []
+    if not enabled:
+        return raw_jobs
+
+    with ThreadPoolExecutor(max_workers=len(enabled)) as executor:
+        # Each task gets its own copy of the current context so Langfuse spans
+        # stay nested under the supervisor trace instead of becoming orphan traces.
+        futures = {
+            executor.submit(contextvars.copy_context().run, fetch): name
+            for name, fetch in enabled
+        }
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                jobs = future.result() or []
+                print(f"📥 Source '{name}' returned {len(jobs)} jobs.")
+                raw_jobs.extend(jobs)
+            except Exception as e:
+                print(f"⚠️ Source '{name}' failed: {str(e)}")
+    return raw_jobs
+
+
+def _process_single_job(job: dict, db: DatabaseManager, generate_cover_letters: bool) -> None:
+    """Runs JD analysis -> matching -> strategy -> tailoring -> persistence for one job."""
+    company = job['company']
+    role = job['role']
+    location = job.get('location', 'India')
+    job_url = job.get('url', '') or job.get('job_url', '')
+
+    current_lifecycle_status = "DISCOVERED"
+
+    # 1. Parse Job Description
+    jd_analysis = analyze_job_description(job["jd_text"])
+
+    # 2. Run Grounded Match Evaluation
+    matching_report = evaluate_candidate_match(jd_analysis=jd_analysis, threshold=60.0)
+    overall_score = int(matching_report.deterministic_score)
+    core_score = int(matching_report.core_capability_score)
+    current_lifecycle_status = "ANALYZED"
+
+    # 3. Formulate Application Strategy (EV Funnel)
+    strategy = determine_application_strategy(
+        company_name=company,
+        role_title=role,
+        jd_analysis=jd_analysis,
+        matching_report=matching_report,
+        career_constraints=CAREER_STRATEGY_CONSTRAINTS
+    )
+
+    if strategy.decision == "SKIP":
+        current_lifecycle_status = "SKIPPED"
+    else:
+        current_lifecycle_status = "SHORTLISTED"
+
+    drive_resume_link = None
+    drive_cover_letter_link = None
+
+    # 4. Tailoring & Document Dispatch Gateway
+    if strategy.decision == "APPLY" and strategy.should_tailor_resume == "YES":
+        resume_res = run_resume_tailoring_workflow(
+            jd_text=job["jd_text"],
+            max_iterations=3,
+            quality_threshold=85,
+            jd_analysis=jd_analysis
+        )
+
+        if resume_res and resume_res.get("audit_report", {}).get("passed_audit"):
+            tailored = resume_res["tailored_output"]
+            doc_res = generate_tailored_resume_docx(
+                company_name=company,
+                role_title=role,
+                tailored_summary=tailored["tailored_summary"],
+                tailored_bullets=tailored["tailored_experience_bullets"]
+            )
+            drive_resume_link = doc_res.get('drive_url')
+            current_lifecycle_status = "TAILORED"
+            if not drive_resume_link:
+                print(f"⚠️ Resume generated locally ({doc_res.get('local_path')}) but Drive upload failed — not marking READY_TO_APPLY.")
+
+        # Only draft a cover letter once the resume itself is actually usable —
+        # otherwise the job never reaches READY_TO_APPLY and the cover letter
+        # (and its Drive upload) is wasted work.
+        if generate_cover_letters and drive_resume_link:
+            cl_res = run_cover_letter_workflow(
+                jd_text=job["jd_text"],
+                company_name=company,
+                max_iterations=3,
+                quality_threshold=85,
+                jd_analysis=jd_analysis
+            )
+
+            if cl_res and cl_res.get("audit_report", {}).get("passed_audit"):
+                cl_doc_res = generate_cover_letter_docx(
+                    company_name=company,
+                    role_title=role,
+                    cover_letter_data=cl_res["cover_letter"]
+                )
+                drive_cover_letter_link = cl_doc_res.get('drive_url')
+
+        if drive_resume_link:
+            current_lifecycle_status = "READY_TO_APPLY"
+
+    # 5. Persist Full Application Record with Rich Lifecycle State
+    db.save_application_record(
+        company=company,
+        title=role,
+        location=location,
+        match_score=overall_score,
+        core_capability_score=core_score,
+        strategy=strategy.priority,
+        decision=strategy.decision,
+        status=current_lifecycle_status,
+        dealbreaker_triggered=strategy.dealbreaker_triggered,
+        dealbreaker_reason=strategy.dealbreaker_reason,
+        drive_resume_link=drive_resume_link,
+        drive_cover_letter_link=drive_cover_letter_link,
+        job_url=job_url
+    )
 
 
 @observe(name="Supervisor Agent: Modular MCP Multi-Agent Run")
@@ -122,22 +260,7 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     # STEP 2: MULTI-PLATFORM JOB BOARD & ATS INGESTION
     # --------------------------------------------------------------------------
     print("\n🌐 STEP 2: Ingesting Job Listings across Enabled Platform MCPs...")
-    raw_jobs = []
-
-    if MCP_TOGGLES.get("ats_direct"):
-        raw_jobs.extend(fetch_ats_direct_jobs(per_company_limit=3))
-    if MCP_TOGGLES.get("ats_google_dork"):
-        raw_jobs.extend(search_ats_via_google_dork(limit=20))
-    if MCP_TOGGLES.get("linkedin_jobs"):
-        raw_jobs.extend(fetch_linkedin_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit_per_query=10))
-    if MCP_TOGGLES.get("indeed"):
-        raw_jobs.extend(fetch_indeed_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=10))
-    if MCP_TOGGLES.get("wellfound"):
-        raw_jobs.extend(fetch_wellfound_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=10))
-    if MCP_TOGGLES.get("glassdoor"):
-        raw_jobs.extend(fetch_glassdoor_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=10))
-    if MCP_TOGGLES.get("ambitionbox"):
-        raw_jobs.extend(fetch_ambitionbox_jobs(search_queries=MASTER_SEARCH_QUERIES, locations=MASTER_LOCATIONS, limit=5))
+    raw_jobs = _collect_raw_jobs()
 
     seen_signatures = set()
     all_jobs = []
@@ -171,94 +294,12 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     # STEP 3: MULTI-AGENT PROCESSING & STATE TRANSITION PIPELINE
     # --------------------------------------------------------------------------
     for idx, job in enumerate(all_jobs):
-        company = job['company']
-        role = job['role']
-        location = job.get('location', 'India')
-        job_url = job.get('url', '') or job.get('job_url', '')
-
-        print(f"\n⚙️ PROCESSING [{idx + 1}/{len(all_jobs)}]: {company} - {role}")
-        current_lifecycle_status = "DISCOVERED"
-
-        # 1. Parse Job Description
-        jd_analysis = analyze_job_description(job["jd_text"])
-
-        # 2. Run Grounded Match Evaluation
-        matching_report = evaluate_candidate_match(jd_analysis=jd_analysis, threshold=60.0)
-        overall_score = int(matching_report.deterministic_score)
-        core_score = int(matching_report.core_capability_score)
-        current_lifecycle_status = "ANALYZED"
-
-        # 3. Formulate Application Strategy (EV Funnel)
-        strategy = determine_application_strategy(
-            company_name=company,
-            role_title=role,
-            jd_analysis=jd_analysis,
-            matching_report=matching_report,
-            career_constraints=CAREER_STRATEGY_CONSTRAINTS
-        )
-
-        if strategy.decision == "SKIP":
-            current_lifecycle_status = "SKIPPED"
-        else:
-            current_lifecycle_status = "SHORTLISTED"
-
-        drive_resume_link = None
-        drive_cover_letter_link = None
-
-        # 4. Tailoring & Document Dispatch Gateway
-        if strategy.decision == "APPLY" and strategy.should_tailor_resume == "YES":
-            resume_res = run_resume_tailoring_workflow(
-                jd_text=job["jd_text"],
-                max_iterations=3,
-                quality_threshold=85
-            )
-
-            if resume_res and resume_res.get("audit_report", {}).get("passed_audit"):
-                tailored = resume_res["tailored_output"]
-                doc_res = generate_tailored_resume_docx(
-                    company_name=company,
-                    role_title=role,
-                    tailored_summary=tailored["tailored_summary"],
-                    tailored_bullets=tailored["tailored_experience_bullets"]
-                )
-                drive_resume_link = doc_res.get('drive_url')
-                current_lifecycle_status = "TAILORED"
-
-            if generate_cover_letters:
-                cl_res = run_cover_letter_workflow(
-                    jd_text=job["jd_text"],
-                    company_name=company,
-                    max_iterations=3,
-                    quality_threshold=85
-                )
-
-                if cl_res and cl_res.get("audit_report", {}).get("passed_audit"):
-                    cl_doc_res = generate_cover_letter_docx(
-                        company_name=company,
-                        role_title=role,
-                        cover_letter_data=cl_res["cover_letter"]
-                    )
-                    drive_cover_letter_link = cl_doc_res.get('drive_url')
-
-            if drive_resume_link:
-                current_lifecycle_status = "READY_TO_APPLY"
-
-        # 5. Persist Full Application Record with Rich Lifecycle State
-        db.save_application_record(
-            company=company,
-            title=role,
-            location=location,
-            match_score=overall_score,
-            core_capability_score=core_score,
-            strategy=strategy.priority,
-            decision=strategy.decision,
-            status=current_lifecycle_status,
-            dealbreaker_triggered=strategy.dealbreaker_triggered,
-            dealbreaker_reason=strategy.dealbreaker_reason,
-            drive_resume_link=drive_resume_link,
-            drive_cover_letter_link=drive_cover_letter_link,
-            job_url=job_url
-        )
+        print(f"\n⚙️ PROCESSING [{idx + 1}/{len(all_jobs)}]: {job.get('company')} - {job.get('role')}")
+        try:
+            _process_single_job(job, db, generate_cover_letters)
+        except Exception as e:
+            # Nothing is persisted for this job, so it is retried automatically next run.
+            print(f"❌ Failed processing {job.get('company')} - {job.get('role')}: {str(e)}. Skipping; will retry next run.")
 
     # --------------------------------------------------------------------------
     # STEP 4: DAILY EXECUTIVE EMAIL DISPATCH
@@ -267,7 +308,10 @@ def run_modular_executive_pipeline(generate_cover_letters: bool = True):
     daily_summary = db.get_daily_standup_summary()
 
     if daily_summary["job_applications"] or daily_summary["hiring_leads"]:
-        send_executive_briefing(daily_summary)
+        try:
+            send_executive_briefing(daily_summary)
+        except Exception as e:
+            print(f"❌ Executive briefing failed: {str(e)}")
 
     print("\n" + generate_daily_standup_report(applications=daily_summary["job_applications"]))
 
