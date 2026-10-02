@@ -20,13 +20,21 @@ WEIGHT_MAP = {
     "UNKNOWN": 0.0
 }
 
+# Required qualifications count fully; nice-to-haves count half, so a missing
+# "bonus" skill can't drag the score down as much as a missing must-have.
+IMPORTANCE_WEIGHT = {
+    "REQUIRED": 1.0,
+    "PREFERRED": 0.5
+}
+
 
 # ------------------------------------------------------------------
 # Structured Data Models
 # ------------------------------------------------------------------
 
 class RequirementMatch(BaseModel):
-    requirement: str = Field(description="The specific JD requirement or skill evaluated")
+    requirement: str = Field(description="The specific JD requirement or skill evaluated (without the [REQUIRED]/[PREFERRED] tag)")
+    importance: Literal["REQUIRED", "PREFERRED"] = Field(description="Copied from the requirement's [REQUIRED]/[PREFERRED] tag")
     category: Literal["HARD_QUALIFICATION", "CORE_CAPABILITY", "TOOL_AND_STACK"] = Field(
         description="HARD_QUALIFICATION (YOE, clearance, degree, auth), CORE_CAPABILITY (backend, AI, distributed systems), TOOL_AND_STACK (Redis, FastAPI, PySpark)"
     )
@@ -49,11 +57,17 @@ class MatchingReport(BaseModel):
     match_count: int
     partial_count: int
     missing_count: int
-    deterministic_score: float = Field(description="Overall unweighted baseline score (0.0 to 100.0)")
-    core_capability_score: float = Field(description="Match score strictly across CORE_CAPABILITY items (0.0 to 100.0)")
+    deterministic_score: float = Field(description="Fit score: importance-weighted coverage of the JD's qualifications (0.0 to 100.0)")
+    core_capability_score: float = Field(description="Importance-weighted fit score across CORE_CAPABILITY items only (0.0 to 100.0)")
     hard_qualification_gaps: List[str] = Field(description="List of unverified or missing HARD_QUALIFICATION items")
     tool_gaps: List[str] = Field(description="List of missing secondary TOOL_AND_STACK items")
     summary: str
+
+
+def _weighted_score(evals: List[RequirementMatch]) -> float:
+    total_weight = sum(IMPORTANCE_WEIGHT[e.importance] for e in evals)
+    points = sum(IMPORTANCE_WEIGHT[e.importance] * WEIGHT_MAP.get(e.classification, 0.0) for e in evals)
+    return round((points / total_weight) * 100.0, 2) if total_weight else 0.0
 
 
 # ------------------------------------------------------------------
@@ -73,8 +87,18 @@ def evaluate_candidate_match(
     if not master_profile:
         master_profile = _load_profile()
 
-    # Combine responsibilities and tech stack into discrete requirements
-    target_requirements = jd_analysis.key_responsibilities + jd_analysis.required_tech_stack
+    # Judge the candidate on the JD's QUALIFICATIONS, not on its duties: duties
+    # ("participate in on-call") aren't something a candidate has or lacks, and
+    # scoring every listed tool made the score track JD verbosity, not fit.
+    target_requirements = (
+        [f"[REQUIRED] {q}" for q in jd_analysis.required_qualifications]
+        + [f"[PREFERRED] {q}" for q in jd_analysis.preferred_qualifications]
+    )
+    if not target_requirements:
+        # JD without an identifiable qualifications section — fall back to the
+        # tech stack, then to the responsibilities, rather than scoring nothing.
+        fallback = jd_analysis.required_tech_stack or jd_analysis.key_responsibilities
+        target_requirements = [f"[REQUIRED] {item}" for item in fallback]
 
     prompt = f"""
     You are a Technical Bar Raiser and Qualification Evaluator.
@@ -86,10 +110,16 @@ def evaluate_candidate_match(
     - 'TOOL_AND_STACK': Specific framework, database, or library mentions (e.g., FastAPI, Redis, ANTLR, Docker, GraphQL, Kubernetes).
 
     STEP 2: CLASSIFY CANDIDATE EVIDENCE
-    - MATCH: Candidate has direct, verified experience/metrics matching the requirement.
-    - PARTIAL: Candidate has adjacent, transferrable, or partial experience.
-    - MISSING: Requirement is completely absent from candidate background.
-    - UNKNOWN: Insufficient information in profile.
+    - MATCH: The profile shows direct, hands-on experience with this exact skill/technology/domain.
+    - PARTIAL: The profile shows a close equivalent a hiring manager would likely accept
+      (e.g. Flask for FastAPI, GCP for AWS, Airflow for Dagster), or the skill used only lightly.
+    - MISSING: Nothing in the profile shows this skill or a close equivalent.
+    - UNKNOWN: The requirement is too vague to judge against any profile.
+    - "One of: A, B, C" items: MATCH if ANY alternative is matched — never penalize the others.
+
+    STEP 3: COPY IMPORTANCE
+    - Each requirement starts with [REQUIRED] or [PREFERRED]; copy it into 'importance' and drop the
+      tag from 'requirement'. Evaluate every requirement exactly once.
 
     CRITICAL INSTRUCTION:
     In candidate_evidence, extract direct, verbatim facts or bullet points from master_profile.json.
@@ -121,16 +151,11 @@ def evaluate_candidate_match(
         overall_score = 0.0
         core_score = 0.0
     else:
-        total_points = sum(WEIGHT_MAP.get(e.classification, 0.0) for e in evals)
-        overall_score = round((total_points / total_reqs) * 100.0, 2)
+        overall_score = _weighted_score(evals)
 
         # Core capability sub-score
         core_evals = [e for e in evals if e.category == "CORE_CAPABILITY"]
-        if core_evals:
-            core_points = sum(WEIGHT_MAP.get(e.classification, 0.0) for e in core_evals)
-            core_score = round((core_points / len(core_evals)) * 100.0, 2)
-        else:
-            core_score = overall_score
+        core_score = _weighted_score(core_evals) if core_evals else overall_score
 
     # Isolate specific gaps for downstream strategy checks
     hard_gaps = [

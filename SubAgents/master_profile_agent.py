@@ -30,6 +30,7 @@ MOUNTED_BASE_RESUME_DIR = REPO_ROOT / "OtherMCP" / "gcs_storage" / "base_resume"
 class PersonalInfo(BaseModel):
     name: str
     email: str
+    phone: Optional[str] = Field(default=None, description="Phone number exactly as written on the resume (with country code if present), or null")
     linkedin: str
     github: str
     target_roles: List[str]

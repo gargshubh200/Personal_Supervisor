@@ -87,6 +87,69 @@ search:
     - "software engineer"
     - "data engineer"
 
+  # Max JD characters kept per job. Qualifications (experience, location,
+  # employment type) usually sit at the END of a JD, so this must be generous
+  # — the old 4000-char cap silently cut them off.
+  max_jd_chars: 15000
+
+# ------------------------------------------------------------------------------
+# Candidate eligibility gate — hard, deterministic checks applied right after
+# JD analysis (OtherMCP/eligibility_mcp.py), BEFORE any matching/strategy/
+# tailoring LLM calls. A job failing any check is saved as SKIPPED with the
+# reason. The same experience threshold is also used by every job-source MCP's
+# cheap regex pre-filter (JobSearchMCP/job_filters.py).
+# ------------------------------------------------------------------------------
+candidate_eligibility:
+  # Candidate has ~2.5 years of experience: skip roles whose stated minimum
+  # required experience is >= this many years (e.g. "3+ years", "3-5 years").
+  skip_if_min_years_at_least: 3
+
+  # Employment types that pass. UNKNOWN (JD doesn't say) is given the benefit
+  # of the doubt. Others: CONTRACT, PART_TIME, INTERNSHIP.
+  allowed_employment_types:
+    - "FULL_TIME"
+    - "UNKNOWN"
+
+  # Region words that make a remote role India-eligible (in addition to
+  # search.india_location_keywords).
+  india_eligible_region_keywords:
+    - "apac"
+    - "asia"
+    - "worldwide"
+    - "global"
+    - "anywhere"
+
+  # Location markers that mark a listing as outside India (cheap pre-filter in
+  # supervisor_agent.is_location_eligible; the LLM gate handles everything else).
+  non_india_location_keywords:
+    - "us"
+    - "usa"
+    - "united states"
+    - "canada"
+    - "uk"
+    - "united kingdom"
+    - "london"
+    - "europe"
+    - "eu"
+    - "emea"
+    - "latam"
+    - "americas"
+    - "north america"
+    - "germany"
+    - "poland"
+    - "estonia"
+    - "france"
+    - "spain"
+    - "portugal"
+    - "netherlands"
+    - "ireland"
+    - "japan"
+    - "tokyo"
+    - "australia"
+    - "brazil"
+    - "mexico"
+    - "costa rica"
+
 # ------------------------------------------------------------------------------
 # Career Strategy Constraints — Agent Optimization Context, Section 6.
 # Hard reject constraints MUST override an APPLY decision. Preference
@@ -178,9 +241,21 @@ career_strategy_constraints:
     - "terraform"
     - "golang"
     - "go (co-equal)"
-    - "3-5 years"
+    # (years-of-experience thresholds live in candidate_eligibility, not here)
 
   preference_downgrade_min_company_size: 10000  # large enterprises: slower hiring, less ownership
+
+  # Fit bands used by the Application Strategy Agent's priority rubric
+  # (scores come from matching_agent: importance-weighted qualification coverage).
+  # Kept lenient on purpose — every APPLY is reviewed manually from the email,
+  # so a borderline role is better surfaced than silently dropped.
+  #   STRONG: score >= strong_min_score AND core >= strong_min_core
+  #   GOOD:   score >= good_min_score
+  #   WEAK:   below that -> SKIP
+  fit_bands:
+    strong_min_score: 70
+    strong_min_core: 60
+    good_min_score: 45
 
 # ------------------------------------------------------------------------------
 # ATS Direct target companies (Greenhouse/Lever/Ashby/Workable public APIs).

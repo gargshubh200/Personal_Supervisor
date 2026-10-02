@@ -23,9 +23,12 @@ from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from config_loader import get_ats_target_companies
+from config_loader import get_ats_target_companies, get_max_jd_chars
+from JobSearchMCP.job_filters import passes_yoe_prefilter
 
 load_dotenv()
+
+MAX_JD_CHARS = get_max_jd_chars()
 
 mcp = MCPServer("ATSDirectServer")
 langfuse = get_client()
@@ -55,15 +58,6 @@ TARGET_TITLE_REGEX = re.compile(
     r'applied ai|ai systems|'
     r'software engineer|backend engineer'
     r')\b',
-    re.IGNORECASE
-)
-
-# ── EXPERIENCE YEAR FILTER ────────────────────────────────────────────────────
-
-# Reject roles that explicitly require 5+ years
-EXPERIENCE_YEAR_REJECT_REGEX = re.compile(
-    r'\b(5|6|7|8|9|10)\+?\s*(?:to\s*\d+\s*)?years?\s+(?:of\s+)?'
-    r'(?:professional\s+)?(?:software\s+)?(?:work\s+)?experience\b',
     re.IGNORECASE
 )
 
@@ -123,29 +117,15 @@ def passes_title_filter(title: str, company_name: str = "") -> bool:
 
 def passes_yoe_filter(jd_text: str) -> bool:
     """
-    Rejects roles explicitly requiring 5+ years.
-    Also rejects internships (0 years required).
-    Returns True if no explicit year requirement found (safe default).
+    Rejects malformed/empty JDs and roles whose stated minimum experience
+    exceeds the candidate's (config.yaml: candidate_eligibility).
+    Internships are excluded by EXCLUDED_TITLE_REGEX, not here — a "0-2 years"
+    requirement is a fit for this candidate, not a reason to skip.
     """
     if not jd_text or len(jd_text) < MIN_JD_LENGTH:
         return False  # Malformed or empty JD — skip
 
-    # Hard reject: 5+ year requirement
-    if EXPERIENCE_YEAR_REJECT_REGEX.search(jd_text):
-        return False
-
-    # Reject internships
-    yoe_matches = re.findall(
-        r'(\d+)\+?\s*(?:-\s*\d+)?\s*years?\s+(?:of\s+)?experience',
-        jd_text,
-        re.IGNORECASE
-    )
-    if yoe_matches:
-        min_years = min(int(y) for y in yoe_matches)
-        if min_years == 0:
-            return False
-
-    return True
+    return passes_yoe_prefilter(jd_text)
 
 
 # A single transient network hiccup (read timeout, connection reset) with any
@@ -181,7 +161,7 @@ def fetch_greenhouse_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
                 "role": title,
                 "url": item.get("absolute_url", ""),
                 "location": item.get("location", {}).get("name", "Remote"),
-                "jd_text": clean_jd[:4000]
+                "jd_text": clean_jd[:MAX_JD_CHARS]
             })
 
     return results
@@ -207,7 +187,7 @@ def fetch_lever_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
                 "role": title,
                 "url": item.get("hostedUrl", ""),
                 "location": item.get("categories", {}).get("location", "Remote"),
-                "jd_text": clean_jd[:4000]
+                "jd_text": clean_jd[:MAX_JD_CHARS]
             })
 
     return results
@@ -243,7 +223,7 @@ def fetch_ashby_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
                 "role": title,
                 "url": item.get("jobUrl") or item.get("applyUrl", ""),
                 "location": location_name,
-                "jd_text": clean_jd[:4000]
+                "jd_text": clean_jd[:MAX_JD_CHARS]
             })
 
     return results
@@ -268,7 +248,7 @@ def fetch_workable_jobs(comp: Dict, per_company_limit: int) -> List[Dict]:
                 "role": title,
                 "url": item.get("url", ""),
                 "location": item.get("location", {}).get("city", "Remote"),
-                "jd_text": clean_jd[:4000]
+                "jd_text": clean_jd[:MAX_JD_CHARS]
             })
 
     return results

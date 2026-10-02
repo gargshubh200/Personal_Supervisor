@@ -6,9 +6,12 @@ from apify_client import ApifyClient
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 
-from config_loader import get_master_search_queries, get_default_locations
+from config_loader import get_master_search_queries, get_default_locations, get_max_jd_chars
+from JobSearchMCP.job_filters import passes_yoe_prefilter
 
 load_dotenv()
+
+MAX_JD_CHARS = get_max_jd_chars()
 
 # Initialize MCPServer and Langfuse client
 mcp = MCPServer("WellfoundJobScraperServer")
@@ -49,12 +52,6 @@ TARGET_TITLE_REGEX = re.compile(
     re.IGNORECASE
 )
 
-EXPERIENCE_YEAR_REJECT_REGEX = re.compile(
-    r'\b(5|6|7|8|9|10)\+?\s*(?:to\s*\d+\s*)?years?\s+(?:of\s+)?'
-    r'(?:professional\s+)?(?:software\s+)?(?:work\s+)?experience\b',
-    re.IGNORECASE
-)
-
 
 def passes_title_filter(title: str) -> bool:
     """Returns True if title matches target engineering domains and isn't excluded."""
@@ -66,10 +63,8 @@ def passes_title_filter(title: str) -> bool:
 
 
 def passes_yoe_filter(jd_text: str) -> bool:
-    """Rejects roles explicitly requiring 5+ years — saves downstream matching-agent tokens."""
-    if not jd_text:
-        return True
-    return not EXPERIENCE_YEAR_REJECT_REGEX.search(jd_text)
+    """Rejects roles whose stated minimum experience exceeds the candidate's (config.yaml: candidate_eligibility)."""
+    return passes_yoe_prefilter(jd_text)
 
 
 # Search queries/locations are sourced from config.yaml — see indeed_scraper_mcp.py
@@ -158,7 +153,7 @@ def fetch_wellfound_jobs(
                         "url": job_url,
                         "compensation": compensation,
                         "location": job_location,
-                        "jd_text": jd_text[:4000]  # Safe token ceiling for LLM context window
+                        "jd_text": jd_text[:MAX_JD_CHARS]  # Safe token ceiling for LLM context window
                     })
 
                     if len(jobs) >= limit:

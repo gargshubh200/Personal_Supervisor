@@ -7,6 +7,7 @@ from langfuse import observe, get_client
 from SubAgents.jd_analysis_agent import JDAnalysis
 from SubAgents.matching_agent import MatchingReport
 from SubAgents.gemini_common import client, gemini_retry, GEMINI_MODEL
+from OtherMCP.ground_truth_mcp import _load_profile
 
 # Single-pass structured extraction (response_schema) -> client.models.generate_content().
 # This is not a multi-turn/tool-calling agent loop, so automatic function calling (which
@@ -21,9 +22,12 @@ class ApplicationStrategyOutput(BaseModel):
     dealbreaker_triggered: bool = Field(description="True if an unresolvable hard constraint was detected")
     dealbreaker_reason: Optional[str] = Field(description="Specific dealbreaker reason if triggered (e.g. security clearance, work authorization)")
     core_capability_match: bool = Field(description="True if candidate possesses the primary technical muscle required for the role")
+    fit_band: Literal["STRONG", "GOOD", "WEAK"] = Field(description="Fit band derived from the matching report per the rubric")
+    desirability_positives: List[str] = Field(description="Each positive desirability signal that applies, as '<signal>: <evidence>'")
+    desirability_negatives: List[str] = Field(description="Each negative desirability signal that applies, as '<signal>: <evidence>'")
     strongest_evidence: List[str] = Field(description="Top candidate accomplishments aligned to core capabilities")
     weakest_area: List[str] = Field(description="Key gaps or requirements where background is weak/missing")
-    should_tailor_resume: Literal["YES", "NO"] = Field(description="YES only if decision is APPLY and role warrants customization")
+    should_tailor_resume: Literal["YES", "NO"] = Field(description="YES only if decision is APPLY and priority is HIGH or MEDIUM")
     interview_preparation: List[str] = Field(description="Key technical topics or system design concepts to review")
     reasoning: str = Field(description="Detailed strategy rationale for auditing")
 
@@ -35,7 +39,9 @@ def determine_application_strategy(
     role_title: str,
     jd_analysis: JDAnalysis,
     matching_report: MatchingReport,
-    career_constraints: Optional[Dict[str, Any]] = None
+    career_constraints: Optional[Dict[str, Any]] = None,
+    job_url: str = "",
+    source_platform: str = ""
 ) -> ApplicationStrategyOutput:
     """
     Evaluates role viability through a multi-stage Expected Value (EV) decision funnel:
@@ -65,6 +71,9 @@ def determine_application_strategy(
                     dealbreaker_triggered=True,
                     dealbreaker_reason=reason,
                     core_capability_match=False,
+                    fit_band="WEAK",
+                    desirability_positives=[],
+                    desirability_negatives=[],
                     strongest_evidence=[],
                     weakest_area=[reason],
                     should_tailor_resume="NO",
@@ -85,6 +94,9 @@ def determine_application_strategy(
                     dealbreaker_triggered=True,
                     dealbreaker_reason=reason,
                     core_capability_match=False,
+                    fit_band="WEAK",
+                    desirability_positives=[],
+                    desirability_negatives=[],
                     strongest_evidence=[],
                     weakest_area=[reason],
                     should_tailor_resume="NO",
@@ -93,60 +105,91 @@ def determine_application_strategy(
                 )
 
     # ------------------------------------------------------------------
-    # STAGE 2 & 3: EXPECTED VALUE & DEALBREAKER EVALUATION (LLM)
+    # STAGE 2-4: DEALBREAKERS, FIT BAND, DESIRABILITY & PRIORITY (LLM, explicit rubric)
     # ------------------------------------------------------------------
-    boost_companies = (career_constraints or {}).get("preference_boost_companies", [])
-    boost_keywords = (career_constraints or {}).get("preference_boost_keywords", [])
-    downgrade_keywords = (career_constraints or {}).get("preference_downgrade_keywords", [])
+    constraints = career_constraints or {}
+    boost_companies = constraints.get("preference_boost_companies", [])
+    boost_keywords = constraints.get("preference_boost_keywords", [])
+    downgrade_keywords = constraints.get("preference_downgrade_keywords", [])
+    large_company_size = constraints.get("preference_downgrade_min_company_size", 10000)
+    bands = constraints.get("fit_bands", {"strong_min_score": 70, "strong_min_core": 60, "good_min_score": 45})
+
+    # Candidate background comes from master_profile.json (regenerated from the
+    # latest resume), never hardcoded — so it can't drift from the real profile.
+    profile = _load_profile()
+    candidate_background = {
+        "name": profile["personal_info"]["name"],
+        "summary": profile.get("summary", ""),
+        "experience": [
+            {"role": e.get("role"), "company": e.get("company"), "period": e.get("period")}
+            for e in profile.get("experience", [])
+        ],
+        "skills": profile.get("skills", {})
+    }
 
     prompt = f"""
     You are an Executive Career Strategist and Principal Engineering Hiring Lead.
-    Evaluate the viability of applying to {company_name} for the position of {role_title}.
+    Decide whether the candidate should apply to {company_name} for "{role_title}", and how urgently.
+    Follow the rubric below EXACTLY and in order. Do not invent extra rules.
 
-    Candidate Master Background (Sahil Garg):
-    - 2.5 Years Experience as Software Engineer building Applied AI, Enterprise Backends, and Platform Tooling at o9 Solutions.
-    - Strong core skills: Python, SQL, REST APIs, LangChain/LangGraph, Spark, Kubernetes, ANTLR, PageRank, Semantic Retrieval.
+    CANDIDATE BACKGROUND (from master_profile.json):
+    {json.dumps(candidate_background, indent=2)}
 
-    EVALUATION DIRECTIVE (EXPECTED VALUE FUNNEL):
-    Do NOT blindly follow the arithmetic match score. Evaluate the Expected Value (EV) using this decision funnel:
+    ALREADY VERIFIED (deterministic eligibility gate, before this step): the role's required years of
+    experience, employment type (full-time) and India location eligibility all PASS. Do not re-judge them,
+    and do not treat "remote" or "open to India" as a positive signal — every role reaching you has it.
 
-    STAGE 1: DEALBREAKER CHECK
-    Set 'dealbreaker_triggered' = True and 'decision' = "SKIP" if ANY of these are present in the JD:
-    - Active US Security Clearance / TS-SCI requirement.
-    - Strict US/EU Work Authorization required (when position is listed in India/Remote).
-    - Hard requirement of 8+ years of experience for non-principal roles, or 5+ years as the PRIMARY requirement.
-    - Non-engineering core mandate (e.g. 100% sales, cold-calling, pure frontend React/CSS).
-    - Primary programming language required is Java, Go, Ruby, PHP, or TypeScript (NOT Python as first-class language).
-    - Role is fundamentally hardware, embedded systems, networking hardware, or datacenter operations focused.
-    - Role is analyst / BI / data-analyst / reporting-focused rather than engineering-focused.
-    - Company is an IT services / outsourcing shop (e.g. TCS, Infosys, Wipro, Cognizant, Capgemini, HCL) rather than a product company.
+    STEP 1 — DEALBREAKERS. Set dealbreaker_triggered = true and decision = "SKIP" if ANY apply:
+    - Active security clearance requirement (TS/SCI etc.).
+    - Non-engineering core mandate (sales, cold-calling, support desk, pure frontend React/CSS).
+    - Primary programming language is Java, Go, Ruby, PHP, or TypeScript and Python is not first-class.
+    - Fundamentally hardware, embedded, networking hardware, or datacenter operations.
+    - Analyst / BI / reporting role rather than engineering.
+    - Company is an IT services / outsourcing / staffing shop (TCS, Infosys, Wipro, Cognizant, Capgemini, HCL, ...).
 
-    STAGE 2: CORE CAPABILITY FIT
-    Does the candidate possess the core technical muscle for this role (e.g. Python, Backends, Distributed Systems, AI/LLM workflows)?
-    - If YES: Missing adjacent secondary frameworks (e.g. FastAPI vs Flask, Redis, minor tool gaps) are EASILY LEARNABLE. Do NOT skip for minor tool gaps if core capability fit is strong.
-    - If NO: If core engineering competencies are missing, mark 'decision' = "SKIP".
+    STEP 2 — FIT BAND, from the MATCHING REPORT below (deterministic_score = importance-weighted coverage of
+    the JD's qualifications; core_capability_score = same, over core engineering capabilities only):
+    - STRONG: deterministic_score >= {bands["strong_min_score"]} AND core_capability_score >= {bands["strong_min_core"]}
+    - GOOD:   deterministic_score >= {bands["good_min_score"]} (and not STRONG)
+    - WEAK:   deterministic_score < {bands["good_min_score"]}, or the matching report has 0 requirements
+    Set core_capability_match = true unless the core_capability_score is below 50.
 
-    STAGE 3: DECISION RULE
-    - decision = "APPLY" if dealbreaker_triggered is False AND core_capability_match is True AND expected value of applying is positive.
-    - decision = "SKIP" if dealbreaker_triggered is True OR core capability match is lacking OR expected value is negligible.
+    STEP 3 — DESIRABILITY. List every signal that applies, with evidence, into desirability_positives /
+    desirability_negatives. Only these signals count:
+    POSITIVE (+1 each):
+    - Company is one of {boost_companies}, or is an AI-native / data-infrastructure product company.
+    - Any of {boost_keywords} is central to the role (in required qualifications or main responsibilities).
+    - Company is a YC-backed or Series A-C product startup (only if evident from the JD).
+    - title_seniority is JUNIOR or MID.
+    NEGATIVE (-1 each):
+    - Any of {downgrade_keywords} is a primary / co-equal required skill.
+    - title_seniority is SENIOR or LEAD_OR_ABOVE.
+    - Company is a large enterprise (~{large_company_size}+ employees).
+    - Each item in the JD analysis 'listing_red_flags'.
+    - The listing comes via an aggregator / reposting site or staffing intermediary rather than the employer
+      (judge from the job URL / source below and the company name, e.g. Jobgether, Glassdoor partner links).
+    net_desirability = (#positives) - (#negatives).
 
-    STAGE 4: PRIORITY ADJUSTMENT (only applies if decision = "APPLY")
-    - Start from a baseline priority driven by match quality and role fit.
-    - UPGRADE MEDIUM -> HIGH if company is AI-native/data-infrastructure focused (e.g. {boost_companies}),
-      OR the JD explicitly mentions any of {boost_keywords},
-      OR company is a YC-backed Series A-C startup, OR role is remote-first/explicitly open to India-based candidates,
-      OR JD mentions a 1-3 or 2-4 year experience requirement.
-    - DOWNGRADE HIGH -> MEDIUM if the role requires any of {downgrade_keywords} as a primary/co-equal skill,
-      OR requires 3-5 years with candidate evidence classified PARTIAL (not full MATCH) on key requirements,
-      OR the company is a large enterprise (10,000+ employees) with typically slower hiring/less ownership.
+    STEP 4 — DECISION & PRIORITY (no exceptions):
+    - dealbreaker_triggered -> decision SKIP, priority LOW.
+    - WEAK fit             -> decision SKIP, priority LOW.
+    - STRONG fit           -> APPLY; HIGH if net_desirability >= 0, else MEDIUM.
+    - GOOD fit             -> APPLY; HIGH if net_desirability >= 2, MEDIUM if net_desirability is -1..1,
+                              LOW if net_desirability <= -2.
+    - should_tailor_resume = "YES" only if decision is APPLY and priority is HIGH or MEDIUM.
+
+    In 'reasoning', state the fit band (with both scores), the net_desirability arithmetic, and the
+    resulting tier in one or two sentences, then any other notes.
 
     COMPANY: {company_name}
     TARGET ROLE: {role_title}
+    JOB URL: {job_url or "unknown"}
+    SOURCE PLATFORM: {source_platform or "unknown"}
 
     JD ANALYSIS:
     {jd_analysis.model_dump_json(indent=2)}
 
-    DETERMINISTIC MATCHING REPORT:
+    MATCHING REPORT:
     {matching_report.model_dump_json(indent=2)}
     """
 
@@ -178,6 +221,9 @@ def determine_application_strategy(
                 "priority": strategy.priority,
                 "dealbreaker_triggered": strategy.dealbreaker_triggered,
                 "core_capability_match": strategy.core_capability_match,
+                "fit_band": strategy.fit_band,
+                "desirability_positives": strategy.desirability_positives,
+                "desirability_negatives": strategy.desirability_negatives,
                 "deterministic_score": matching_report.deterministic_score
             }
         )

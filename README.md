@@ -151,7 +151,14 @@ Each run walks through the same sequence of steps, in order:
    dropped before it reaches the next step.
 
 4. **Evaluate every remaining job, one at a time:**
-   - Read and structure the job description (seniority, must-have skills, etc.).
+   - Read and structure the job description (seniority, must-have skills, etc.),
+     including the hard eligibility facts: years of experience required,
+     employment type, and whether someone based in India can take the role.
+   - Apply a deterministic eligibility gate (`OtherMCP/eligibility_mcp.py`,
+     thresholds in `config.yaml` → `candidate_eligibility`): roles needing too
+     much experience, non-full-time roles, and roles not open to India are
+     saved as SKIPPED with the reason and evidence quote, before any further
+     LLM calls are spent on them.
    - Score how well it matches your actual, verified experience.
    - Decide: apply, or skip — and if applying, at what priority.
    - If it's worth applying to, tailor your resume's summary and bullet points

@@ -7,9 +7,11 @@ from apify_client import ApifyClient
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 
-from config_loader import get_master_search_queries, get_default_locations
+from config_loader import get_master_search_queries, get_default_locations, get_max_jd_chars
 
 load_dotenv()
+
+MAX_JD_CHARS = get_max_jd_chars()
 
 # Initialize MCPServer and Langfuse client
 mcp = MCPServer("AmbitionBoxJobScraperServer")
@@ -125,7 +127,7 @@ def fetch_ambitionbox_jobs(
                         "company_rating": rating,
                         "location": job_location,
                         "skills": item.get("skills", []),
-                        "jd_text": jd_text[:4000]  # Safe token ceiling for LLM context window
+                        "jd_text": jd_text[:MAX_JD_CHARS]  # Safe token ceiling for LLM context window
                     })
 
                     if len(jobs) >= limit:

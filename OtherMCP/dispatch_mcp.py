@@ -56,6 +56,15 @@ def set_spacing(paragraph, space_before=0, space_after=2, line_spacing=1.15):
     p_format.line_spacing = line_spacing
 
 
+def _contact_line(info: Dict[str, Any]) -> str:
+    """Contact details from master_profile.json personal_info; missing fields (e.g. no phone) are omitted."""
+    return " | ".join(v for v in (info.get("phone"), info.get("email"), info.get("linkedin"), info.get("github")) if v)
+
+
+def _file_safe(text: str) -> str:
+    return "".join(c for c in text if c.isalnum() or c in (" ", "_")).strip().replace(" ", "_")
+
+
 def _normalize_bullet(text: str) -> str:
     return re.sub(r"[^a-z0-9%+<>.]+", " ", (text or "").lower()).strip()
 
@@ -207,7 +216,7 @@ def generate_tailored_resume_docx(
     contact_p = doc.add_paragraph()
     set_spacing(contact_p, space_after=10)
     contact_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    contact_text = f"+91 9109268883 | {info['email']} | {info['linkedin']} | {info['github']}"
+    contact_text = _contact_line(info)
     run_contact = contact_p.add_run(contact_text)
     run_contact.font.name = "Arial"
     run_contact.font.size = Pt(9.5)
@@ -355,7 +364,7 @@ def generate_tailored_resume_docx(
 
     safe_company = "".join([c for c in company_name if c.isalnum() or c in (" ", "_")]).strip()
     safe_role = "".join([c for c in role_title if c.isalnum() or c in (" ", "_")]).strip()
-    file_name = f"ATS_Resume_Sahil_Garg_{safe_company}_{safe_role}.docx".replace(" ", "_")
+    file_name = f"ATS_Resume_{_file_safe(info['name'])}_{safe_company}_{safe_role}.docx".replace(" ", "_")
     output_path = OUTPUT_DIR / file_name
 
     doc.save(str(output_path))
@@ -423,7 +432,7 @@ def generate_cover_letter_docx(
 
     contact_p = doc.add_paragraph()
     set_spacing(contact_p, space_after=12)
-    contact_text = f"{info['email']} | +91 9109268883 | {info['linkedin']} | {info['github']}"
+    contact_text = _contact_line(info)
     run_contact = contact_p.add_run(contact_text)
     run_contact.font.name = "Arial"
     run_contact.font.size = Pt(9.5)
@@ -480,7 +489,7 @@ def generate_cover_letter_docx(
     # Save to local file
     safe_company = "".join([c for c in company_name if c.isalnum() or c in (" ", "_")]).strip()
     safe_role = "".join([c for c in role_title if c.isalnum() or c in (" ", "_")]).strip()
-    file_name = f"Cover_Letter_Sahil_Garg_{safe_company}_{safe_role}.docx".replace(" ", "_")
+    file_name = f"Cover_Letter_{_file_safe(info['name'])}_{safe_company}_{safe_role}.docx".replace(" ", "_")
     output_path = OUTPUT_DIR / file_name
 
     doc.save(str(output_path))

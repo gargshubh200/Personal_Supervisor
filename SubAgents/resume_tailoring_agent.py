@@ -62,7 +62,7 @@ def generate_tailored_bullets(
     {critique_block}
     CRITICAL SAFETY RULES:
     1. DO NOT invent new companies, metrics, numbers, or tools not present in the master profile.
-    2. Maintain all quantitative metrics strictly as written (e.g., 98%, 60%, 40%, 90+ environments, 15+ clients).
+    2. Maintain every quantitative metric exactly as written in the master profile (numbers, percentages, counts, before/after values).
     3. Re-frame technical phrasing toward applied AI, software engineering, and system reliability rather than pure data pipeline maintenance.
     4. 'original_bullet' MUST be copied verbatim, character-for-character, from an 'achievements' entry in the master profile.
 

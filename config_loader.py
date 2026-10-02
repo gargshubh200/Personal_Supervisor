@@ -58,6 +58,14 @@ def get_hiring_post_roles() -> List[str]:
     return load_config()["search"]["hiring_post_roles"]
 
 
+def get_max_jd_chars() -> int:
+    return load_config()["search"]["max_jd_chars"]
+
+
+def get_candidate_eligibility() -> Dict[str, Any]:
+    return load_config()["candidate_eligibility"]
+
+
 def get_career_strategy_constraints() -> Dict[str, Any]:
     return load_config()["career_strategy_constraints"]
 

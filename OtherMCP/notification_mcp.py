@@ -110,12 +110,12 @@ def build_executive_briefing(summary_data: dict) -> tuple:
 
 def send_executive_briefing(summary_data: dict) -> bool:
     """Formats and emails today's Career OS standup report, artifacts, and outreach drafts."""
-    sender_email = os.getenv("SENDER_EMAIL", "gargshubh200@gmail.com")
+    sender_email = os.getenv("SENDER_EMAIL")
     sender_password = os.getenv("SENDER_APP_PASSWORD")
-    recipient_email = os.getenv("RECIPIENT_EMAIL", "gargshubh200@gmail.com")
+    recipient_email = os.getenv("RECIPIENT_EMAIL") or sender_email
 
-    if not sender_password:
-        print("⚠️ SENDER_APP_PASSWORD not set. Skipping email dispatch.")
+    if not sender_email or not sender_password:
+        print("⚠️ SENDER_EMAIL / SENDER_APP_PASSWORD not set. Skipping email dispatch.")
         return False
 
     subject, html_content = build_executive_briefing(summary_data)

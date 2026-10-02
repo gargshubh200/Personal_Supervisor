@@ -25,14 +25,18 @@ maintenance cost. See COMPANY_SCOPED_DORK_QUERIES.
 import os
 import re
 import requests
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 from mcp.server.mcpserver import MCPServer
 from langfuse import observe, get_client
 
-from config_loader import get_no_public_ats_companies
+from config_loader import get_no_public_ats_companies, get_max_jd_chars
+from JobSearchMCP.job_filters import passes_yoe_prefilter
+from JobSearchMCP.ats_direct_mcp import clean_html
 
 load_dotenv()
+
+MAX_JD_CHARS = get_max_jd_chars()
 
 # Initialize MCPServer and Langfuse client
 mcp = MCPServer("ATSGoogleDorkServer")
@@ -81,18 +85,57 @@ def passes_tier1_title_filter(title: str) -> bool:
 
 
 def passes_tier2_yoe_filter(jd_text: str) -> bool:
-    """
-    Parses required years of experience.
-    Rejects roles strictly requiring 5+ years (per Agent Optimization Context
-    EXPERIENCE_YEAR_FILTER max_years_required=4) or internships (0 years).
-    """
-    yoe_matches = re.findall(r'(\d+)\+?\s*(?:-\s*\d+)?\s*years?\s+(?:of\s+)?experience', jd_text, re.IGNORECASE)
+    """Rejects roles whose stated minimum experience exceeds the candidate's (config.yaml: candidate_eligibility)."""
+    return passes_yoe_prefilter(jd_text)
 
-    if yoe_matches:
-        min_years = min(int(y) for y in yoe_matches)
-        if min_years >= 5 or min_years == 0:
-            return False
-    return True
+
+def fetch_ats_posting_via_api(url: str) -> Optional[Dict[str, str]]:
+    """
+    For Greenhouse / Lever / Ashby URLs, fetches the full JD and the REAL job
+    location from the vendor's free public API (same APIs ats_direct_mcp uses).
+    Google result pages carry no reliable location, and Tavily extraction loses
+    the structured location field — this used to be papered over by stamping
+    every dork result "Remote / India", which let US/EU/Japan-only roles through.
+    Returns None for other URLs or on any failure (caller falls back to Tavily).
+    """
+    try:
+        m = re.search(r"greenhouse\.io/([^/?#]+)/jobs/(\d+)", url)
+        if m:
+            res = requests.get(f"https://boards-api.greenhouse.io/v1/boards/{m.group(1)}/jobs/{m.group(2)}", timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                return {"text": clean_html(data.get("content", "")),
+                        "location": (data.get("location") or {}).get("name") or "Unknown"}
+            return None
+
+        m = re.search(r"lever\.co/([^/?#]+)/([0-9a-f-]{36})", url)
+        if m:
+            res = requests.get(f"https://api.lever.co/v0/postings/{m.group(1)}/{m.group(2)}", timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                sections = " ".join(f'{s.get("text", "")}: {clean_html(s.get("content", ""))}' for s in data.get("lists", []))
+                text = f'{data.get("descriptionPlain", "")} {sections} {data.get("additionalPlain", "")}'
+                categories = data.get("categories") or {}
+                locations = categories.get("allLocations") or [categories.get("location") or "Unknown"]
+                workplace = data.get("workplaceType")
+                return {"text": clean_html(text),
+                        "location": ", ".join(locations) + (f" ({workplace})" if workplace else "")}
+            return None
+
+        m = re.search(r"ashbyhq\.com/([^/?#]+)/([0-9a-f-]{36})", url)
+        if m:
+            res = requests.get(f"https://api.ashbyhq.com/posting-api/job-board/{m.group(1)}", timeout=15)
+            if res.status_code == 200:
+                job = next((j for j in res.json().get("jobs", []) if j.get("id") == m.group(2)), None)
+                if job:
+                    locations = [job.get("location") or "Unknown"] + [s.get("location") for s in job.get("secondaryLocations", []) if s.get("location")]
+                    workplace = job.get("workplaceType")
+                    return {"text": clean_html(job.get("descriptionHtml") or job.get("descriptionPlain") or ""),
+                            "location": ", ".join(locations) + (f" ({workplace})" if workplace else "")}
+            return None
+    except Exception as e:
+        print(f"⚠️ ATS API fetch failed for {url}: {str(e)}")
+    return None
 
 
 NO_PUBLIC_ATS_COMPANIES = get_no_public_ats_companies()
@@ -243,16 +286,25 @@ def search_ats_via_google_dork(limit: int = 5) -> List[Dict[str, Any]]:
                 print(f"❌ ATS DORK MCP query error [{dork_query}]: {str(e)}")
                 query_stats[dork_query] = 0
 
-        # Step 2: Extract full Markdown JDs via Tavily /extract endpoint
+        # Step 2a: Greenhouse/Lever/Ashby links -> full JD + real location via free public APIs
+        ats_postings = {}
+        for link in urls_to_extract:
+            posting = fetch_ats_posting_via_api(link)
+            if posting and posting["text"]:
+                ats_postings[link] = posting
+
+        # Step 2b: Everything else -> full Markdown JD via Tavily /extract endpoint
+        tavily_urls = [u for u in urls_to_extract if u not in ats_postings]
         extracted_jds = {}
-        if urls_to_extract:
-            print(f"🧠 ATS DORK MCP: Extracting full JDs for {len(urls_to_extract)} links via Tavily...")
-            extracted_jds = fetch_full_jds_via_tavily(urls_to_extract)
+        if tavily_urls:
+            print(f"🧠 ATS DORK MCP: Extracting full JDs for {len(tavily_urls)} links via Tavily...")
+            extracted_jds = fetch_full_jds_via_tavily(tavily_urls)
 
         # Step 3: Combine and apply Tier 2 YOE filter
         final_jobs = []
         for job in candidate_jobs:
-            full_text = extracted_jds.get(job["url"]) or job["snippet"]
+            posting = ats_postings.get(job["url"]) or {}
+            full_text = posting.get("text") or extracted_jds.get(job["url"]) or job["snippet"]
 
             if passes_tier2_yoe_filter(full_text):
                 final_jobs.append({
@@ -260,8 +312,10 @@ def search_ats_via_google_dork(limit: int = 5) -> List[Dict[str, Any]]:
                     "company": job["company"],
                     "role": job["role"],
                     "url": job["url"],
-                    "location": "Remote / India",
-                    "jd_text": full_text[:4000]
+                    # Never fabricate a location: "Unknown" defers the decision to the
+                    # JD-analysis eligibility gate, which reads the JD's own location text.
+                    "location": posting.get("location") or "Unknown",
+                    "jd_text": full_text[:MAX_JD_CHARS]
                 })
 
         # Instrument Telemetry

@@ -68,19 +68,21 @@ def generate_cover_letter(
             critique_block += f"- {imp}\n"
         critique_block += f"Qualitative Feedback: {review_feedback.qualitative_critique}\n"
 
+    candidate_name = master_profile["personal_info"]["name"]
+
     prompt = f"""
     You are an Executive Cover Letter Writer for Applied AI, Platform & Software Engineering roles.
-    Draft a concise, compelling cover letter for Sahil Garg applying to {company_name} for the position of {jd_analysis.target_role}.
+    Draft a concise, compelling cover letter for {candidate_name} applying to {company_name} for the position of {jd_analysis.target_role}.
 
     {critique_block}
 
     STRICT OPENING HOOK DIRECTIVE:
     - NEVER begin with generic template formulas such as "I am writing to express my interest...", "I am thrilled to apply...", "Please accept this letter...", or "I am excited about the opportunity...".
-    - ALWAYS open directly with a high-impact, specific statement connecting Sahil's engineering background directly to {company_name}'s domain or the target {jd_analysis.target_role} requirements (e.g., "Having engineered centralized monitoring ETL architectures across 90+ enterprise client environments...").
+    - ALWAYS open directly with a high-impact, specific statement connecting one concrete accomplishment from the master profile to {company_name}'s domain or the target {jd_analysis.target_role} requirements.
 
     GROUND-TRUTH DIRECTIVES:
-    1. Reference strictly verified facts from master profile (90+ client environments, 98% onboarding speedup, ANTLR log obfuscation for 15+ clients, 60% query reduction via skills-based agent).
-    2. Connect candidate expertise in Python, agentic LLM workflows, and platform reliability directly to the JD requirements.
+    1. Reference only facts present in the MASTER PROFILE below — prefer its 'candidate_claims' (verified metrics with verbatim evidence) and 'experience' achievements. Keep every number exactly as written there; never introduce new metrics, tools or employers.
+    2. Connect the candidate's strongest relevant skills from the master profile directly to the JD requirements.
     3. Maintain a confident, professional engineering tone. Avoid generic boilerplate.
 
     TARGET JOB ANALYSIS:

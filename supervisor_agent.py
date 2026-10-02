@@ -1,4 +1,5 @@
 import os
+import re
 import contextvars
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
@@ -9,6 +10,8 @@ from config_loader import (
     get_master_search_queries,
     get_master_locations,
     get_career_strategy_constraints,
+    get_candidate_eligibility,
+    get_india_location_keywords,
 )
 
 from JobSearchMCP.ats_direct_mcp import fetch_ats_direct_jobs
@@ -29,6 +32,7 @@ from SubAgents.cover_letter_agent import run_cover_letter_workflow
 
 from OtherMCP.personal_ops_mcp import generate_daily_standup_report
 from OtherMCP.ground_truth_mcp import _load_profile
+from OtherMCP.eligibility_mcp import check_candidate_eligibility
 from OtherMCP.dispatch_mcp import generate_tailored_resume_docx, generate_cover_letter_docx
 
 from SubAgents.master_profile_agent import generate_master_profile, find_latest_resume_in_candidate_folder
@@ -47,11 +51,33 @@ MASTER_LOCATIONS = get_master_locations()
 CAREER_STRATEGY_CONSTRAINTS = get_career_strategy_constraints()
 
 
+INDIA_LOCATION_KEYWORDS = [k.lower() for k in get_india_location_keywords()]
+CANDIDATE_ELIGIBILITY = get_candidate_eligibility()
+INDIA_ELIGIBLE_REGION_REGEX = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in CANDIDATE_ELIGIBILITY["india_eligible_region_keywords"]) + r")\b", re.IGNORECASE
+)
+NON_INDIA_LOCATION_REGEX = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in CANDIDATE_ELIGIBILITY["non_india_location_keywords"]) + r")\b", re.IGNORECASE
+)
+
+
 def is_location_eligible(job_location: str, allowed_locations: list) -> bool:
-    if not job_location or job_location.upper() == "N/A":
+    """
+    Cheap pre-filter on the source-listed location, before any LLM call. Only
+    rejects listings that explicitly name a non-India country/region and no
+    India signal (e.g. "Remote - US", "Remote Canada", "Tokyo, Japan").
+    Everything else — bare "Remote", "Unknown", or an unrecognized city — is
+    deferred to the JD-analysis eligibility gate, which reads the JD's own
+    location terms: ATS APIs often list only the HQ city (e.g. DeepIntent
+    lists "New York" while its JD explicitly hires in India).
+    """
+    if not job_location or job_location.strip().upper() in ("N/A", "UNKNOWN"):
         return True
     loc_lower = job_location.lower()
-    return any(target.lower() in loc_lower for target in allowed_locations) or "remote" in loc_lower
+    named_targets = [t.lower() for t in allowed_locations if t.lower() != "remote"]
+    if any(t in loc_lower for t in named_targets + INDIA_LOCATION_KEYWORDS) or INDIA_ELIGIBLE_REGION_REGEX.search(loc_lower):
+        return True
+    return not NON_INDIA_LOCATION_REGEX.search(loc_lower)
 
 
 def _job_source_fetchers() -> list:
@@ -101,8 +127,29 @@ def _process_single_job(job: dict, db: DatabaseManager, generate_cover_letters: 
 
     current_lifecycle_status = "DISCOVERED"
 
-    # 1. Parse Job Description
-    jd_analysis = analyze_job_description(job["jd_text"])
+    # 1. Parse Job Description (incl. experience / employment type / location eligibility facts)
+    jd_analysis = analyze_job_description(job["jd_text"], listed_location=location)
+
+    # 1b. Deterministic Eligibility Gate — hard constraints from config.yaml,
+    # checked before spending matching / strategy / tailoring LLM calls.
+    eligibility = check_candidate_eligibility(jd_analysis, listed_location=location)
+    if not eligibility["eligible"]:
+        reason = " | ".join(eligibility["reasons"])
+        print(f"🚫 [Eligibility Gate] SKIP {company} - {role}: {reason}")
+        db.save_application_record(
+            company=company,
+            title=role,
+            location=location,
+            match_score=0,
+            core_capability_score=0,
+            strategy="LOW",
+            decision="SKIP",
+            status="SKIPPED",
+            dealbreaker_triggered=True,
+            dealbreaker_reason=f"Eligibility gate: {reason}",
+            job_url=job_url
+        )
+        return
 
     # 2. Run Grounded Match Evaluation
     matching_report = evaluate_candidate_match(jd_analysis=jd_analysis, threshold=60.0)
@@ -116,7 +163,9 @@ def _process_single_job(job: dict, db: DatabaseManager, generate_cover_letters: 
         role_title=role,
         jd_analysis=jd_analysis,
         matching_report=matching_report,
-        career_constraints=CAREER_STRATEGY_CONSTRAINTS
+        career_constraints=CAREER_STRATEGY_CONSTRAINTS,
+        job_url=job_url,
+        source_platform=job.get('platform', '')
     )
 
     if strategy.decision == "SKIP":
